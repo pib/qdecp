@@ -1,0 +1,16 @@
+{application, qdecp,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  lager,
+                  ranch,
+                  cowboy,
+                  ibrowse
+                 ]},
+  {mod, { qdecp_app, []}},
+  {env, []}
+ ]}.

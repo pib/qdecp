@@ -19,7 +19,7 @@
 
 -define(SERVER, ?MODULE). 
 
--record(state, {}).
+-record(state, {request_pids=[]}).
 
 %%%===================================================================
 %%% API
@@ -43,8 +43,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 proxy(Req, ReplyTo) ->
-    gen_server:cast(?SERVER, {proxy, Req, ReplyTo}),
-    ok.
+    gen_server:call(?SERVER, {proxy, Req, ReplyTo}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -78,9 +77,21 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call({proxy, Req, ReplyTo}, _From, State) ->
+    {Method, _} = cowboy_req:method(Req),
+    {Url, _} = cowboy_req:url(Req),
+    lager:info("~p ~p", [Method, Url]),
+    case Method of
+        <<"GET">> ->
+            {ibrowse_req_id, ReqId} = ibrowse:send_req(binary_to_list(Url), [], get, [], 
+                                                       [{stream_to, self()}]),
+            {reply, {ok, ReqId}, add_req_pid(ReqId, ReplyTo, State)};
+        _ ->
+            {reply, {not_allowed, <<"GET">>}, State}
+    end;
+handle_call(Request, _From, State) ->
+    {reply, {unexpected_request, Request}, State}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -92,17 +103,6 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({proxy, Req, ReplyTo}, State) ->
-    {Method, _} = cowboy_req:method(Req),
-    {Url, _} = cowboy_req:url(Req),
-    lager:info("~p ~p", [Method, Url]),
-    case Method of
-        <<"GET">> ->
-            ReplyTo ! {reply, ["OK ", Url]};
-        _ ->
-            ReplyTo ! {not_allowed, <<"GET">>}
-    end,
-    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -116,6 +116,27 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info({ibrowse_async_headers, ReqId, Code, Headers}, State) ->
+    case get_req_pid(ReqId, State) of
+        none -> ok;
+        Pid ->
+            Pid ! {proxy_headers, ReqId, list_to_integer(Code), Headers}
+    end,
+    {noreply, State};
+handle_info({ibrowse_async_response, ReqId, Body}, State) ->
+    case get_req_pid(ReqId, State) of
+        none -> ok;
+        Pid -> Pid ! {proxy_body, ReqId, Body}
+    end,
+    {noreply, State};
+handle_info({ibrowse_async_response_end, ReqId}, State) ->
+    case get_req_pid(ReqId, State) of
+        none ->
+            {noreply, State};
+        Pid ->
+            Pid ! {proxy_done, ReqId},
+            {noreply, del_req_pid(ReqId, State)}
+    end;
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -147,3 +168,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+add_req_pid(ReqId, Pid, State) ->
+    State#state{request_pids=[{ReqId, Pid} | State#state.request_pids]}.
+
+get_req_pid(ReqId, State) ->
+    case proplists:lookup(ReqId, State#state.request_pids) of
+        {ReqId, Pid} -> Pid;
+        none -> none
+    end.
+
+del_req_pid(ReqId, State) ->
+    State#state{request_pids=proplists:delete(ReqId, State#state.request_pids)}.

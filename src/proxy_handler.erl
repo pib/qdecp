@@ -7,8 +7,10 @@
 init({tcp, http}, Req, _) ->
     case check_cache(Req) of
         {ok, {Code, Headers, Body}} ->
-            {ok, Req2} = cowboy_req:reply(Code, Headers, Body, Req),
-            {ok, Req2, undefined_state};
+            self() ! {ibrowse_async_headers, none, Code, Headers},
+            self() ! {ibrowse_async_response, none, Body},
+            self() ! {ibrowse_async_response_end, none},
+            {loop, Req, #state{req_id=none}};
         none ->
             start_request(Req)
     end.
@@ -16,14 +18,19 @@ init({tcp, http}, Req, _) ->
 start_request(Req) ->
     {Method, _} = cowboy_req:method(Req),
     {Url, _} = cowboy_req:url(Req),
+    Headers = request_headers(Req),
     lager:debug("~p ~p", [Method, Url]),
     case Method of
         <<"GET">> ->
-            {ok, ReqId} = send_req(Url, []),
+            {ok, ReqId} = send_req(get, Url, Headers, []),
+            {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
+        <<"POST">> ->
+            {ok, Body, _} = cowboy_req:body(Req),
+            {ok, ReqId} = send_req(post, Url, Headers, Body),
             {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
         _ ->
             {ok, Req2} = cowboy_req:reply(405, [{<<"allowed">>, <<"Get">>}], Req),
-            {ok, Req2, undefined_state}
+            {ok, Req2, #state{}}
     end.
 
 info({ibrowse_async_headers, ReqId, Code, Headers}, Req, State) ->
@@ -49,8 +56,8 @@ info({ibrowse_async_response, ReqId, Body}, Req, State) ->
 info({ibrowse_async_response_end, ReqId}, Req, State) ->
     case State#state.res_code of
         "200" -> ok;
-        _ -> lager:warning("Non-200 response: ~p, ~p", [State#state.res_code,
-                                                        State#state.res_body])
+        _ -> lager:warning("Non-200 response: ~p", [State#state.res_code]),
+             lager:debug("Non-200 response body: ~p", [State#state.res_body])
     end,
     case State#state.req_id of
         ReqId ->
@@ -58,7 +65,7 @@ info({ibrowse_async_response_end, ReqId}, Req, State) ->
             Body = lists:reverse(State#state.res_body),
             Code = list_to_integer(State#state.res_code),
             Headers = lists:reverse(State#state.res_headers),
-            cache(Req, {Code, Headers, Body}),
+            maybe_cache(Req, {State#state.res_code, Headers, Body}),
             {ok, Req2} = cowboy_req:reply(Code, Headers, Body, Req),
             {ok, Req2, State};
         _ ->
@@ -80,10 +87,16 @@ terminate(Reason, _Req, State) ->
     end,
     ok.
 
-cache(Req, Response) ->
+maybe_cache(Req, Response) ->
+    {Method, _} = cowboy_req:method(Req),
     {Url, _} = cowboy_req:url(Req),
-    lager:debug("Caching ~p ~p", [Url, Response]),
-    cadfaerl:put(response_cache, Url, Response).
+    case Method of
+        <<"GET">> ->
+            lager:debug("Caching ~p ~p", [Url, Response]),
+            cadfaerl:put(response_cache, Url, Response);
+        _ ->
+            lager:debug("Not caching ~p ~p", [Url, Response])
+    end.
 
 check_cache(Req) ->
     {Url, _} = cowboy_req:url(Req),
@@ -94,10 +107,14 @@ check_cache(Req) ->
         _ -> none
     end.
 
-send_req(Url, Headers) ->
-    case ibrowse:send_req(binary_to_list(Url), Headers, get, [], [{stream_to, self()}]) of
+request_headers(Req) ->
+    {Headers, _} = cowboy_req:headers(Req),
+    [{binary_to_list(Name), binary_to_list(Val)} || {Name, Val} <- Headers].
+
+send_req(Method, Url, Headers, Body) ->
+    case ibrowse:send_req(binary_to_list(Url), Headers, Method, Body, [{stream_to, self()}]) of
         {ibrowse_req_id, ReqId} -> {ok, ReqId};
-        Error ->
-            lager:error("Error sending request ~p", [Error]),
-            send_req(Url, Headers)
+        {error, retry_later} ->
+            lager:error("Got retry later, retrying."),
+            send_req(Method, Url, Headers, Body)
     end.

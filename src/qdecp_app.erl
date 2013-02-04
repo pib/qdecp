@@ -13,7 +13,7 @@ start(_StartType, _StartArgs) ->
     cadfaerl:start_link(response_cache, 1000),
     Dispatch = cowboy_router:compile([
                 %% {Host, list({Path, Handler, Opts})}
-                {'_', [{'_', proxy_handler, []}]}
+                {'_', [{'_', qdecp_cowboy_handler, []}]}
                ]),
 
     %% Name, NbAcceptors, TransOpts, ProtoOpts

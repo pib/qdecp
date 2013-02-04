@@ -1,4 +1,4 @@
--module(proxy_handler).
+-module(qdecp_cowboy_handler).
 -behavior(cowboy_loop_handler).
 -export([init/3, info/3, terminate/3]).
 

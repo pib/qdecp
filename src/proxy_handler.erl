@@ -19,14 +19,16 @@ start_request(Req) ->
     {Method, _} = cowboy_req:method(Req),
     {Url, _} = cowboy_req:url(Req),
     Headers = request_headers(Req),
-    lager:debug("~p ~p", [Method, Url]),
+    [Socket] = cowboy_req:get([socket], Req),
+    {ok, {Ip, _Port}} = inet:sockname(Socket),
+    lager:debug("~p ~p ~p", [Ip, Method, Url]),
     case Method of
         <<"GET">> ->
-            {ok, ReqId} = send_req(get, Url, Headers, []),
+            {ok, ReqId} = send_req(Ip, get, Url, Headers, []),
             {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
         <<"POST">> ->
             {ok, Body, _} = cowboy_req:body(Req),
-            {ok, ReqId} = send_req(post, Url, Headers, Body),
+            {ok, ReqId} = send_req(Ip, post, Url, Headers, Body),
             {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
         _ ->
             {ok, Req2} = cowboy_req:reply(405, [{<<"allowed">>, <<"Get">>}], Req),
@@ -111,10 +113,11 @@ request_headers(Req) ->
     {Headers, _} = cowboy_req:headers(Req),
     [{binary_to_list(Name), binary_to_list(Val)} || {Name, Val} <- Headers].
 
-send_req(Method, Url, Headers, Body) ->
-    case ibrowse:send_req(binary_to_list(Url), Headers, Method, Body, [{stream_to, self()}]) of
+send_req(Ip, Method, Url, Headers, Body) ->
+    case ibrowse:send_req(binary_to_list(Url), Headers, Method, Body,
+                          [{stream_to, self()},{socket_options, [{ip, Ip}]}]) of
         {ibrowse_req_id, ReqId} -> {ok, ReqId};
         {error, retry_later} ->
             lager:error("Got retry later, retrying."),
-            send_req(Method, Url, Headers, Body)
+            send_req(Ip, Method, Url, Headers, Body)
     end.

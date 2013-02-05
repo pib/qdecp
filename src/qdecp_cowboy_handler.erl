@@ -96,7 +96,8 @@ request_headers(Req) ->
 
 response_headers(Headers) ->
     lager:debug("Response headers: ~p", [Headers]),
-    [{string:to_lower(Name), Val} || {Name, Val} <- Headers, Name =/= "Content-Length"].
+    [{list_to_binary(string:to_lower(Name)), list_to_binary(Val)} ||
+        {Name, Val} <- Headers, Name =/= "Content-Length"].
 
 send_req(Ip, Method, Url, Headers, Body) ->
     case ibrowse:send_req(binary_to_list(Url), Headers, Method, Body,

@@ -22,7 +22,7 @@ init(_CacheConfig) ->
     ok.
 
 set(Key, Value) ->
-    cadfaerl:put(?CACHE, Key, Value, 86400),
+    cadfaerl:put_ttl(?CACHE, Key, Value, 86400),
     ok.
 
 get(Key) ->

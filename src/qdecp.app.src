@@ -14,6 +14,14 @@
   {mod, { qdecp_app, []}},
   {env, [
    {cache, [
+    %% List of things to be concatenated together to form the cache key for each request
+    %% [method
+    %%  | url
+    %%  | {cookie, CookieName :: string()}
+    %%  | {sub_cookie, CookieName, SubCookieName, Divider}]
+    %% Divider is the character used to separate sub-cookies, like $: or $&
+    {key_parts, [method, url]},
+    %% {key_parts, [method, url, {sub_cookie, "PREF", "L", $:}]},
     {modules, [qdecp_cache_memlocal]}
    ]}
   ]}

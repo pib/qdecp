@@ -48,9 +48,33 @@ config() ->
 config(Key, Default) ->
     proplists:get_value(Key, config(), Default).
 
-cache_key(Req, _Config) ->
+cache_key(Req, Config) ->
+    %% Read the cookies (Cowboy lowecases the cookie names, which is bad)
+    %% Cookie names are case-sensitive, dangit!
+    {RawCookies, _} = cowboy_req:header(<<"cookie">>, Req),
+    Cookies = qdecp_cookie:parse_cookies(RawCookies),
+
+    Parts = proplists:get_value(key_parts, Config),
+    KeyParts = lists:map(fun(Part) -> cache_key_parts(Req, Cookies, Part) end, Parts),
+
+    lager:debug("Cache Key: ~p", [KeyParts]),
+    KeyParts.
+
+cache_key_parts(Req, _Cookies, method) ->
+    {Method, _} = cowboy_req:method(Req),
+    Method;
+cache_key_parts(Req, _Cookies, url) ->
     {Url, _} = cowboy_req:url(Req),
-    Url.
+    Url;
+cache_key_parts(_Req, Cookies, {cookie, Name}) ->
+    proplists:get_value(Name, Cookies);
+cache_key_parts(_Req, Cookies, {sub_cookie, CookieName, SubCookieName, Div}) ->
+    case proplists:get_value(CookieName, Cookies) of
+        undefined -> undefined;            
+        Cookie ->
+            SubCookies = qdecp_cookie:parse_sub_cookies(Cookie, Div),
+            proplists:get_value(SubCookieName, SubCookies)
+    end.
 
 apply_all(Fun, Args) ->
     lists:map(fun(Mod) -> apply(Mod, Fun, Args) end, config(modules, [])).

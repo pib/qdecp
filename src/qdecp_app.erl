@@ -10,7 +10,8 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    cadfaerl:start_link(response_cache, 1000),
+    qdecp_cache:init(),
+
     Dispatch = cowboy_router:compile([
                 %% {Host, list({Path, Handler, Opts})}
                 {'_', [{'_', qdecp_cowboy_handler, []}]}

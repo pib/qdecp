@@ -5,7 +5,7 @@
 -record(state, {req_id, res_code, res_headers, res_body=[]}).
 
 init({tcp, http}, Req, _) ->
-    case check_cache(Req) of
+    case qdecp_cache:get(Req) of
         {ok, {Code, Headers, Body}} ->
             self() ! {ibrowse_async_headers, none, Code, Headers},
             self() ! {ibrowse_async_response, none, Body},
@@ -66,8 +66,8 @@ info({ibrowse_async_response_end, ReqId}, Req, State) ->
             %% The request id matches, so we're good
             Body = lists:reverse(State#state.res_body),
             Code = list_to_integer(State#state.res_code),
-            Headers = lists:reverse(State#state.res_headers),
-            maybe_cache(Req, {State#state.res_code, Headers, Body}),
+            Headers = response_headers(State#state.res_headers),
+            qdecp_cache:set(Req, {State#state.res_code, Headers, Body}),
             {ok, Req2} = cowboy_req:reply(Code, Headers, Body, Req),
             {ok, Req2, State};
         _ ->
@@ -89,29 +89,14 @@ terminate(Reason, _Req, State) ->
     end,
     ok.
 
-maybe_cache(Req, Response) ->
-    {Method, _} = cowboy_req:method(Req),
-    {Url, _} = cowboy_req:url(Req),
-    case Method of
-        <<"GET">> ->
-            lager:debug("Caching ~p ~p", [Url, Response]),
-            cadfaerl:put(response_cache, Url, Response);
-        _ ->
-            lager:debug("Not caching ~p ~p", [Url, Response])
-    end.
-
-check_cache(Req) ->
-    {Url, _} = cowboy_req:url(Req),
-    case cadfaerl:get(response_cache, Url) of
-        {ok, Cached} ->
-            lager:debug("Response was in cache ~p ~p", [Url, Cached]),
-            {ok, Cached};
-        _ -> none
-    end.
-
 request_headers(Req) ->
     {Headers, _} = cowboy_req:headers(Req),
-    [{binary_to_list(Name), binary_to_list(Val)} || {Name, Val} <- Headers].
+    [{binary_to_list(Name), binary_to_list(Val)} || {Name, Val} <- Headers,
+                                                    Name =/= <<"host">>].
+
+response_headers(Headers) ->
+    lager:debug("Response headers: ~p", [Headers]),
+    [{string:to_lower(Name), Val} || {Name, Val} <- Headers, Name =/= "Content-Length"].
 
 send_req(Ip, Method, Url, Headers, Body) ->
     case ibrowse:send_req(binary_to_list(Url), Headers, Method, Body,

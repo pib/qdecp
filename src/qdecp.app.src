@@ -12,5 +12,9 @@
                   ibrowse
                  ]},
   {mod, { qdecp_app, []}},
-  {env, []}
+  {env, [
+   {cache, [
+    {modules, [qdecp_cache_memlocal]}
+   ]}
+  ]}
  ]}.

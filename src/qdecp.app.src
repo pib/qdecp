@@ -9,7 +9,8 @@
                   lager,
                   ranch,
                   cowboy,
-                  ibrowse
+                  ibrowse,
+                  riakc
                  ]},
   {mod, { qdecp_app, []}},
   {env, [

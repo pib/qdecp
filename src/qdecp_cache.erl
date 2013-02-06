@@ -9,7 +9,7 @@
 -module(qdecp_cache).
 
 %% API
--export([init/0, set/2, get/1]).
+-export([init/0, set/2, get/1, config/0, config/2]).
 
 %%%===================================================================
 %%% API

@@ -15,12 +15,17 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-init(_CacheConfig) ->
+init(CacheConfig) ->
+    supervisor:start_child(
+      qdecp_sup, {qdecp_cache_riak,
+                  {qdecp_cache_riak_sup, start_link, [CacheConfig]},
+                  permanent, 5000, supervisor,
+                  [qdecp_cache_riak_sup]}),
     ok.
 
 set(Key, Value) ->
     Bucket = bucket(),
-    riakc:execute(
+    execute(
       fun(P) ->
               Obj = riak_obj:new(Bucket, Key, Value, "application/binary"),
               riak_pb_socket:put(P, Obj)
@@ -29,7 +34,7 @@ set(Key, Value) ->
 
 get(Key) ->
     Bucket = bucket(),
-    riakc:execute(
+    execute(
       fun(P) ->
               case riak_pb_socket:get(P, Bucket, Key) of
                   {ok, Obj} ->
@@ -45,3 +50,8 @@ get(Key) ->
 bucket() ->
     Config = qdecp_cache:config(riak, []),
     proplists:get_value(bucket, Config, <<"qdecp_cache">>).
+
+execute(Fun) ->
+    poolboy:transaction(riak, fun(Worker) ->
+        gen_server:call(Worker, {execute, Fun})
+    end).

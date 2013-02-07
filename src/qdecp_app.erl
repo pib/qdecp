@@ -10,6 +10,7 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+    {ok, Pid} = qdecp_sup:start_link(),
     qdecp_cache:init(),
 
     Dispatch = cowboy_router:compile([
@@ -21,8 +22,8 @@ start(_StartType, _StartArgs) ->
     cowboy:start_http(proxy_listener, 100,
                       [{port, 8888}],
                       [{env, [{dispatch, Dispatch}]}]),
+    {ok, Pid}.
 
-    qdecp_sup:start_link().
 
 stop(_State) ->
     ok.

@@ -10,8 +10,7 @@
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
-init(Args) ->
-    [Host, Port] = Args,
+init({Host, Port}) ->
     {ok, Conn} = riakc_pb_socket:start_link(Host, Port),
     
     {ok, #state{conn=Conn}}.

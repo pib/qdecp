@@ -2,6 +2,8 @@
 
 -export([parse_cookies/1, parse_sub_cookies/2]).
 
+parse_cookies(undefined) ->
+    [];
 parse_cookies(Cookies) when is_binary(Cookies) ->
     parse_cookies(binary_to_list(Cookies));
 parse_cookies(Cookies) ->

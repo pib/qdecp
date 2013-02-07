@@ -3,22 +3,23 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link(CacheConfig) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, CacheConfig).
 
-init([CacheConfig]) ->
+init(CacheConfig) ->
     RiakConfig = proplists:get_value(riak, CacheConfig, []),
-    Pools = proplists:get_value(connections, RiakConfig),
+    Size = proplists:get_value(pool_size, RiakConfig, 10),
+    Server = proplists:get_value(server, RiakConfig, {"127.0.0.1", 8087}),
     
-    PoolSpecs = lists:map(fun({Name, SizeArgs, WorkerArgs}) ->
-        PoolArgs = [{name, {local, Name}},
-                    {worker_module, qdecp_cache_riak_worker}] ++ SizeArgs,
-        poolboy:child_spec(Name, PoolArgs, WorkerArgs)
-    end, Pools),
-    
+    Name = qdecp_riak,
+    PoolSpecs = [poolboy:child_spec(Name, [{name, {local, Name}},
+                                           {worker_module, qdecp_cache_riak_worker},
+                                           {size, Size}],
+                                    Server)],
+   
     {ok, {{one_for_one, 10, 10}, PoolSpecs}}.

@@ -17,18 +17,19 @@
 %%%===================================================================
 init(CacheConfig) ->
     supervisor:start_child(
-      qdecp_sup, {qdecp_cache_riak,
+      qdecp_sup, {qdecp_cache_riak_sup,
                   {qdecp_cache_riak_sup, start_link, [CacheConfig]},
                   permanent, 5000, supervisor,
                   [qdecp_cache_riak_sup]}),
     ok.
 
 set(Key, Value) ->
+    BinVal = term_to_binary(Value),
     Bucket = bucket(),
     execute(
       fun(P) ->
-              Obj = riak_obj:new(Bucket, Key, Value, "application/binary"),
-              riak_pb_socket:put(P, Obj)
+              Obj = riakc_obj:new(Bucket, Key, BinVal, "application/binary"),
+              riakc_pb_socket:put(P, Obj)
       end),
     ok.
 
@@ -36,12 +37,12 @@ get(Key) ->
     Bucket = bucket(),
     execute(
       fun(P) ->
-              case riak_pb_socket:get(P, Bucket, Key) of
+              case riakc_pb_socket:get(P, Bucket, Key) of
                   {ok, Obj} ->
-                      case catch riak_obj:get_value(Obj) of
+                      case catch riakc_obj:get_value(Obj) of
                           siblings -> throw(siblings);
                           no_value -> none;
-                          Val -> Val
+                          Val -> binary_to_term(Val)
                       end;
                   _ -> none
               end
@@ -52,6 +53,6 @@ bucket() ->
     proplists:get_value(bucket, Config, <<"qdecp_cache">>).
 
 execute(Fun) ->
-    poolboy:transaction(riak, fun(Worker) ->
+    poolboy:transaction(qdecp_riak, fun(Worker) ->
         gen_server:call(Worker, {execute, Fun})
     end).

@@ -24,9 +24,13 @@ init(CacheConfig) ->
     ok.
 
 set(Key, Value) ->
-    BinVal = term_to_binary(Value),
+    {Today, _} = calendar:universal_time(),
+    BinVal = term_to_binary(case should_gzip() of 
+                                true -> {Today, {gzipped, zlib:gzip(term_to_binary(Value))}};
+                                false -> {Today, {uncompressed, Value}}
+                            end),
     Bucket = bucket(),
-    execute(
+    execute_async(
       fun(P) ->
               Obj = riakc_obj:new(Bucket, Key, BinVal, "application/binary"),
               riakc_pb_socket:put(P, Obj)
@@ -35,24 +39,41 @@ set(Key, Value) ->
 
 get(Key) ->
     Bucket = bucket(),
-    execute(
+    Val = execute(
       fun(P) ->
               case riakc_pb_socket:get(P, Bucket, Key) of
                   {ok, Obj} ->
                       case catch riakc_obj:get_value(Obj) of
                           siblings -> throw(siblings);
                           no_value -> none;
-                          Val -> binary_to_term(Val)
+                          Val -> Val
                       end;
                   _ -> none
               end
-      end).
+      end),
+    {Today, _} = calendar:universal_time(),
+    case binary_to_term(Val) of
+        {Date, {gzipped, Zipped}} when Date =< Today -> binary_to_term(zlib:gunzip(Zipped));
+        {Date, {uncompressed, Cached}} when Date =< Today -> Cached;
+        _ ->
+            execute_async(
+              fun(P) -> riakc_pb_socket:delete(P, Bucket, Key) end),
+            none
+    end.
+
 
 bucket() ->
     Config = qdecp_cache:config(riak, []),
     proplists:get_value(bucket, Config, <<"qdecp_cache">>).
 
+should_gzip() ->
+    Config = qdecp_cache:config(riak, []),
+    proplists:get_value(gzip, Config, false).
+
 execute(Fun) ->
     poolboy:transaction(qdecp_riak, fun(Worker) ->
         gen_server:call(Worker, {execute, Fun})
     end).
+
+execute_async(Fun) ->
+    spawn(fun() -> execute(Fun) end).

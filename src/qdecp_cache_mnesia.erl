@@ -10,73 +10,66 @@
 -behavior(qdecp_cache_module).
 
 %% API
--export([init/1, get/1, set/2]).
+-export([create_db/0, init/1, get/1, set/2]).
 
 -record(qdecp_cache, {key, value, created_at}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-init(CacheConfig) ->
-    MnesiaConfig = proplists:get_value(mnesia, CacheConfig, []),
+create_db() ->
+    MnesiaConfig = qdecp_cache:config(mnesia, []),
     Nodes = proplists:get_value(nodes, MnesiaConfig, [node()]),
+    Fragments = proplists:get_value(fragments, MnesiaConfig, 25),
+    RamCopies = proplists:get_value(ram_copies, MnesiaConfig, 0),
+    DiscCopies = proplists:get_value(disc_copies, MnesiaConfig, 0),
+    DiscOnlyCopies = proplists:get_value(disc_only_copies, MnesiaConfig, 1),
+    
     mnesia:create_schema(Nodes),
+
+    mnesia:subscribe(system),
     mnesia:start(),
-    mnesia:create_table(qdecp_cache, 
-                        [{attributes, record_info(fields, qdecp_cache)},
-                         {index, [created_at]}]).
+    mnesia:unsubscribe(system),
+
+    Res = mnesia:create_table(
+            qdecp_cache, 
+            [{attributes, record_info(fields, qdecp_cache)},
+             {index, [created_at]},
+             {frag_properties, [
+                                {node_pool, Nodes},
+                                {n_fragments, Fragments},
+                                {n_ram_copies, RamCopies},
+                                {n_disc_copies, DiscCopies},
+                                {n_disc_only_copies, DiscOnlyCopies}
+                               ]}]),
+    case Res of
+        {atomic, ok} -> ok;
+        {aborted, {already_exists, qdecp_cache}} -> ok;
+        Other -> throw(Other)
+    end.
+
+init(_CacheConfig) ->
+    mnesia:start(),
+    case mnesia:wait_for_tables([qdecp_cache], 20000) of
+        {timeout, RemainingTabs} ->
+            throw(RemainingTabs);
+        ok ->
+            ok
+    end.
 
 set(Key, Value) ->
-    {Today, _} = calendar:universal_time(),
-    BinVal = term_to_binary(case should_gzip() of 
-                                true -> {Today, {gzipped, zlib:gzip(term_to_binary(Value))}};
-                                false -> {Today, {uncompressed, Value}}
-                            end),
-    Bucket = bucket(),
-    execute_async(
-      fun(P) ->
-              Obj = riakc_obj:new(Bucket, Key, BinVal, "application/binary"),
-              riakc_pb_socket:put(P, Obj)
-      end),
+    Now = calendar:universal_time(),
+    spawn(fun() -> mnesia:dirty_write(#qdecp_cache{key=Key, value=Value, created_at=Now}) end),
     ok.
 
 get(Key) ->
-    Bucket = bucket(),
-    Val = execute(
-      fun(P) ->
-              case riakc_pb_socket:get(P, Bucket, Key) of
-                  {ok, Obj} ->
-                      case catch riakc_obj:get_value(Obj) of
-                          siblings -> throw(siblings);
-                          no_value -> none;
-                          Val -> Val
-                      end;
-                  _ -> none
-              end
-      end),
     {Today, _} = calendar:universal_time(),
-    case binary_to_term(Val) of
-        {Date, {gzipped, Zipped}} when Date =< Today -> binary_to_term(zlib:gunzip(Zipped));
-        {Date, {uncompressed, Cached}} when Date =< Today -> Cached;
+    case mnesia:dirty_read(qdecp_cache, Key) of
+        [Cached=#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
+            Cached#qdecp_cache.value;
+        [Cached=#qdecp_cache{}] ->
+            spawn(fun() -> mnesia:dirty_delete_object(Cached) end),
+            none;
         _ ->
-            execute_async(
-              fun(P) -> riakc_pb_socket:delete(P, Bucket, Key) end),
             none
     end.
-
-
-bucket() ->
-    Config = qdecp_cache:config(riak, []),
-    proplists:get_value(bucket, Config, <<"qdecp_cache">>).
-
-should_gzip() ->
-    Config = qdecp_cache:config(riak, []),
-    proplists:get_value(gzip, Config, false).
-
-execute(Fun) ->
-    poolboy:transaction(qdecp_riak, fun(Worker) ->
-        gen_server:call(Worker, {execute, Fun})
-    end).
-
-execute_async(Fun) ->
-    spawn(fun() -> execute(Fun) end).

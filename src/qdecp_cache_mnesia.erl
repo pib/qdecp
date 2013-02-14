@@ -10,7 +10,7 @@
 -behavior(qdecp_cache_module).
 
 %% API
--export([create_db/0, init/1, get/1, set/2]).
+-export([create_db/0, manage_db/1, init/1, get/1, set/2]).
 
 -record(qdecp_cache, {key, value, created_at}).
 
@@ -19,17 +19,43 @@
 %%%===================================================================
 create_db() ->
     MnesiaConfig = qdecp_cache:config(mnesia, []),
-    Nodes = proplists:get_value(nodes, MnesiaConfig, [node()]),
-    Fragments = proplists:get_value(fragments, MnesiaConfig, 25),
-    RamCopies = proplists:get_value(ram_copies, MnesiaConfig, 0),
-    DiscCopies = proplists:get_value(disc_copies, MnesiaConfig, 0),
-    DiscOnlyCopies = proplists:get_value(disc_only_copies, MnesiaConfig, 1),
-    
-    mnesia:create_schema(Nodes),
+    manage_db(MnesiaConfig, [create_schema, start, create_tables]).
 
-    mnesia:subscribe(system),
-    mnesia:start(),
-    mnesia:unsubscribe(system),
+manage_db(Commands) ->
+    MnesiaConfig = qdecp_cache:config(mnesia, []),
+    manage_db(MnesiaConfig, Commands).
+
+manage_db(_, []) ->
+    ok;
+
+manage_db(Config, [stop | Rest]) ->
+    Nodes = proplists:get_value(nodes, Config, [node()]),
+    %% Stop mnesia on each node
+    lists:foreach(fun(Node) -> spawn(Node, mnesia, stop, []) end, Nodes),
+    manage_db(Config, Rest);
+
+manage_db(Config, [delete_schema | Rest]) ->
+    Nodes = proplists:get_value(nodes, Config, [node()]),
+    mnesia:delete_schema(Nodes),
+    manage_db(Config, Rest);
+
+manage_db(Config, [create_schema | Rest]) ->
+    Nodes = proplists:get_value(nodes, Config, [node()]),
+    mnesia:create_schema(Nodes),
+    manage_db(Config, Rest);
+    
+manage_db(Config, [start | Rest]) ->
+    Nodes = proplists:get_value(nodes, Config, [node()]),
+    %% Start mnesia on each node
+    lists:foreach(fun(Node) -> spawn(Node, mnesia, start, []) end, Nodes),
+    manage_db(Config, Rest);
+
+manage_db(Config, [create_tables | Rest]) ->
+    Nodes = proplists:get_value(nodes, Config, [node()]),
+    Fragments = proplists:get_value(fragments, Config, 32),
+    RamCopies = proplists:get_value(ram_copies, Config, 0),
+    DiscCopies = proplists:get_value(disc_copies, Config, 0),
+    DiscOnlyCopies = proplists:get_value(disc_only_copies, Config, 1),
 
     Res = mnesia:create_table(
             qdecp_cache, 
@@ -46,7 +72,12 @@ create_db() ->
         {atomic, ok} -> ok;
         {aborted, {already_exists, qdecp_cache}} -> ok;
         Other -> throw(Other)
-    end.
+    end,
+    manage_db(Config, Rest);
+
+manage_db(Config, [delete_tables | Rest]) ->
+    mnesia:delete_table(qdecp_cache),
+    manage_db(Config, Rest).
 
 init(_CacheConfig) ->
     mnesia:start(),
@@ -59,16 +90,19 @@ init(_CacheConfig) ->
 
 set(Key, Value) ->
     Now = calendar:universal_time(),
-    spawn(fun() -> mnesia:dirty_write(#qdecp_cache{key=Key, value=Value, created_at=Now}) end),
+    Write = fun() -> mnesia:write(#qdecp_cache{key=Key, value=Value, created_at=Now}) end,
+    mnesia:activity(async_dirty, Write, [], mnesia_frag),
     ok.
 
 get(Key) ->
     {Today, _} = calendar:universal_time(),
-    case mnesia:dirty_read(qdecp_cache, Key) of
+    Read = fun() -> mnesia:read(qdecp_cache, Key) end,
+    case mnesia:activity(sync_dirty, Read, [], mnesia_frag) of
         [Cached=#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
             Cached#qdecp_cache.value;
         [Cached=#qdecp_cache{}] ->
-            spawn(fun() -> mnesia:dirty_delete_object(Cached) end),
+            Delete = fun() -> mnesia:delete_object(Cached) end,
+            mnesia:activity(async_dirty, Delete, [], mnesia_frag),
             none;
         _ ->
             none

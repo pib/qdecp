@@ -58,7 +58,7 @@ info({ibrowse_async_response, ReqId, Body}, Req, State) ->
 info({ibrowse_async_response_end, ReqId}, Req, State) ->
     case State#state.res_code of
         "200" -> ok;
-        _ -> lager:warning("Non-200 response: ~p", [State#state.res_code]),
+        _ -> lager:debug("Non-200 response: ~p", [State#state.res_code]),
              lager:debug("Non-200 response body: ~p", [State#state.res_body])
     end,
     case State#state.req_id of

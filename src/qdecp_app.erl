@@ -10,6 +10,11 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+    Port  = case application:get_env(qdecp, port) of
+                {ok, P} -> P;
+                undefined -> 8888
+            end,
+
     {ok, Pid} = qdecp_sup:start_link(),
     qdecp_cache:init(),
 
@@ -20,7 +25,7 @@ start(_StartType, _StartArgs) ->
 
     %% Name, NbAcceptors, TransOpts, ProtoOpts
     cowboy:start_http(proxy_listener, 100,
-                      [{port, 8888}],
+                      [{port, Port}],
                       [{env, [{dispatch, Dispatch}]}]),
     {ok, Pid}.
 

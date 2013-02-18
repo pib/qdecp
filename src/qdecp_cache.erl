@@ -24,18 +24,23 @@ set(Req, Response) ->
     case Method of
         <<"GET">> ->
             lager:debug("Caching ~p ~p", [Key, Response]),
+            qdecp_stats:log_event({cache_set}),
             apply_all(set, [Key, Response]);
         _ ->
-            lager:debug("Not caching ~p ~p", [Key, Response])
+            lager:debug("Not caching ~p ~p", [Key, Response]),
+            qdecp_stats:log_event({cache_not_set, wrong_method})
     end.
 
 get(Req) ->
     Key = cache_key(Req, config()),
     case apply_until(get, [Key]) of
-        {ok, Cached} ->
+        {ok, Cached, Mod} ->
             lager:debug("Response was in cache ~p ~p", [Key, Cached]),
+            qdecp_stats:log_event({cache_hit, Mod}),
             {ok, Cached};
-        _ -> none
+        _ ->
+            qdecp_stats:log_event({cache_miss}),
+            none
     end.
 
 %%%===================================================================
@@ -86,6 +91,6 @@ apply_until([], _Fun, _Args) ->
     none;
 apply_until([Mod | Modules], Fun, Args) ->
     case apply(Mod, Fun, Args) of
-        {ok, Val} -> {ok, Val};
+        {ok, Val} -> {ok, Val, Mod};
         _ -> apply_until(Modules, Fun, Args)
     end.

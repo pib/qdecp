@@ -5,6 +5,8 @@
 -record(state, {req_id, res_code, res_headers, res_body=[]}).
 
 init({tcp, http}, Req, _) ->
+    {Method, _} = cowboy_req:method(Req),
+    qdecp_stats:log_event({request_in, list_to_binary(string:to_lower(binary_to_list(Method)))}),
     case qdecp_cache:get(Req) of
         {ok, {Code, Headers, Body}} ->
             self() ! {ibrowse_async_headers, none, Code, Headers},
@@ -31,7 +33,8 @@ start_request(Req) ->
             {ok, ReqId} = send_req(Ip, post, Url, Headers, Body),
             {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
         _ ->
-            {ok, Req2} = cowboy_req:reply(405, [{<<"allowed">>, <<"Get">>}], Req),
+            {ok, Req2} = cowboy_req:reply(405, [{<<"allow">>, <<"GET, POST">>}], Req),
+            qdecp_stats:log_event({response, '405'}),
             {ok, Req2, #state{}}
     end.
 
@@ -69,6 +72,7 @@ info({ibrowse_async_response_end, ReqId}, Req, State) ->
             Headers = response_headers(State#state.res_headers),
             qdecp_cache:set(Req, {State#state.res_code, Headers, Body}),
             {ok, Req2} = cowboy_req:reply(Code, Headers, Body, Req),
+            qdecp_stats:log_event({response, list_to_atom(State#state.res_code)}),
             {ok, Req2, State};
         _ ->
             %% Request id didn't match, ignore it
@@ -105,8 +109,11 @@ response_headers(Headers) ->
 send_req(Ip, Method, Url, Headers, Body) ->
     case ibrowse:send_req(binary_to_list(Url), Headers, Method, Body,
                           [{stream_to, self()},{socket_options, [{ip, Ip}]}]) of
-        {ibrowse_req_id, ReqId} -> {ok, ReqId};
+        {ibrowse_req_id, ReqId} -> 
+            qdecp_stats:log_event({request_out, Method}),
+            {ok, ReqId};
         {error, retry_later} ->
+            qdecp_stats:log_event({request_retry, Method}),
             lager:error("Got retry later, retrying."),
             send_req(Ip, Method, Url, Headers, Body)
     end.

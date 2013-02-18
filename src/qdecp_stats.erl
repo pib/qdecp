@@ -94,6 +94,9 @@ handle_call({get_stats, today}, _, State=#state{table=Table}) ->
     Match = mnesia:dirty_match_object({Table, {Today, '_'}, '_'}),
     Stats = [{Key, Count} || {_, {_, Key}, Count} <- Match],
     {reply, Stats, State};
+handle_call({flush}, _, State=#state{table=Table}) ->
+    mnesia:clear_table(Table),
+    {reply, ok, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.

@@ -77,6 +77,10 @@ manage_db(Config, [create_tables | Rest]) ->
 
 manage_db(Config, [delete_tables | Rest]) ->
     mnesia:delete_table(qdecp_cache),
+    manage_db(Config, Rest);
+
+manage_db(Config, [flush | Rest]) ->
+    mnesia:activity(sync_dirty, fun() -> mnesia:clear_table(qdecp_cache) end, [], mnesia_frag),
     manage_db(Config, Rest).
 
 init(_CacheConfig) ->

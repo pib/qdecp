@@ -6,7 +6,7 @@
 
 init({tcp, http}, Req, _) ->
     {Method, _} = cowboy_req:method(Req),
-    qdecp_stats:log_event({request_in, list_to_binary(string:to_lower(binary_to_list(Method)))}),
+    qdecp_stats:log_event({request_in, list_to_atom(string:to_lower(binary_to_list(Method)))}),
     case qdecp_cache:get(Req) of
         {ok, {Code, Headers, Body}} ->
             self() ! {ibrowse_async_headers, none, Code, Headers},

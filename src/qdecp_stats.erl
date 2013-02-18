@@ -58,7 +58,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     mnesia:start(),
-    case mnesia:create_table(?TABLE, [{disc_copies, [node()]}]) of
+    case mnesia:create_table(?TABLE, [{disc_copies, [node()]}, {local_content, true}]) of
         {atomic, ok} -> ok;
         {aborted, {already_exists, ?TABLE}} -> ok;
         Else -> throw(Else)

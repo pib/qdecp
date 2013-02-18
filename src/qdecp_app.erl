@@ -21,6 +21,7 @@ start(_StartType, _StartArgs) ->
     Dispatch = cowboy_router:compile([
                 %% {Host, list({Path, Handler, Opts})}
                 {"127.0.0.1", [{"/stats", qdecp_stats_handler, []}]},
+                {"localhost", [{"/stats", qdecp_stats_handler, []}]},
                 {'_', [{'_', qdecp_cowboy_handler, []}]}
                ]),
 

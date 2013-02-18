@@ -18,9 +18,7 @@
          terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
--define(TABLE, ?MODULE).
-
--record(state, {}).
+-record(state, {table}).
 
 %%%===================================================================
 %%% API
@@ -57,20 +55,22 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
+    Table = list_to_atom("qdecp_stats_" ++ atom_to_list(node())),
+
     mnesia:start(),
-    case mnesia:create_table(?TABLE, [{disc_copies, [node()]}, {local_content, true}]) of
+    case mnesia:create_table(Table, [{disc_copies, [node()]}]) of
         {atomic, ok} -> ok;
-        {aborted, {already_exists, ?TABLE}} -> ok;
+        {aborted, {already_exists, Table}} -> ok;
         Else -> throw(Else)
     end,
 
-    case mnesia:wait_for_tables([?TABLE], 20000) of
+    case mnesia:wait_for_tables([Table], 20000) of
         {timeout, RemainingTabs} ->
             throw(RemainingTabs);
         ok ->
             ok
     end,
-    {ok, #state{}}.
+    {ok, #state{table=Table}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -87,12 +87,12 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({get_stats, all_keys}, _, State) ->
-    Keys = mnesia:dirty_all_keys(?TABLE),
+    Keys = mnesia:dirty_all_keys(State#state.table),
     {reply, Keys, State};
-handle_call({get_stats, today}, _, State) ->
+handle_call({get_stats, today}, _, State=#state{table=Table}) ->
     {Today, _} = calendar:universal_time(),
-    Match = mnesia:dirty_match_object({?TABLE, {Today, '_'}, '_'}),
-    Stats = [{Key, Count} || {?TABLE, {_, Key}, Count} <- Match],
+    Match = mnesia:dirty_match_object({Table, {Today, '_'}, '_'}),
+    Stats = [{Key, Count} || {_, {_, Key}, Count} <- Match],
     {reply, Stats, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -110,7 +110,7 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({log_event, Event}, State) ->
     {Today, _} = calendar:universal_time(),
-    log_event_parts(Today, lists:reverse(tuple_to_list(Event))),
+    log_event_parts(State#state.table, Today, lists:reverse(tuple_to_list(Event))),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -156,10 +156,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-log_event_parts(Today, Parts=[_Part | Rest]) ->
+log_event_parts(Table, Today, Parts=[_Part | Rest]) ->
     SubEvent = string:join(lists:reverse(lists:map(fun erlang:atom_to_list/1, Parts)), "_"),
-    mnesia:dirty_update_counter(?TABLE, {Today, SubEvent}, 1),
-    log_event_parts(Today, Rest);
-log_event_parts(_, []) ->
+    mnesia:dirty_update_counter(Table, {Today, SubEvent}, 1),
+    log_event_parts(Table, Today, Rest);
+log_event_parts(_, _, []) ->
     ok.
 

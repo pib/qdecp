@@ -25,5 +25,7 @@ proplist_to_json(Proplist) ->
 
 proplist_to_json([], [$, | Acc]) ->
     ["{" | Acc];
+proplist_to_json([], Acc) ->
+    ["{" | Acc];
 proplist_to_json([{Key, Val} | Rest], Acc) ->
     proplist_to_json(Rest, [$,, $", Key, $", $:, $", Val, $" | Acc]).

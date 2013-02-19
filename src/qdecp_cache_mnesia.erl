@@ -12,6 +12,7 @@
 %% API
 -export([create_db/0, manage_db/1, init/1, get/1, set/2]).
 
+-define(TABLE, qdecp_cache).
 -record(qdecp_cache, {key, value, created_at}).
 
 %%%===================================================================
@@ -58,7 +59,7 @@ manage_db(Config, [create_tables | Rest]) ->
     DiscOnlyCopies = proplists:get_value(disc_only_copies, Config, 1),
 
     Res = mnesia:create_table(
-            qdecp_cache, 
+            ?TABLE, 
             [{attributes, record_info(fields, qdecp_cache)},
              {index, [created_at]},
              {frag_properties, [
@@ -70,22 +71,22 @@ manage_db(Config, [create_tables | Rest]) ->
                                ]}]),
     case Res of
         {atomic, ok} -> ok;
-        {aborted, {already_exists, qdecp_cache}} -> ok;
+        {aborted, {already_exists, ?TABLE}} -> ok;
         Other -> throw(Other)
     end,
     manage_db(Config, Rest);
 
 manage_db(Config, [delete_tables | Rest]) ->
-    mnesia:delete_table(qdecp_cache),
+    mnesia:delete_table(?TABLE),
     manage_db(Config, Rest);
 
 manage_db(Config, [flush | Rest]) ->
-    mnesia:activity(sync_dirty, fun() -> mnesia:clear_table(qdecp_cache) end, [], mnesia_frag),
+    mnesia:activity(sync_dirty, fun() -> mnesia:clear_table(?TABLE) end, [], mnesia_frag),
     manage_db(Config, Rest).
 
 init(_CacheConfig) ->
     mnesia:start(),
-    case mnesia:wait_for_tables([qdecp_cache], 20000) of
+    case mnesia:wait_for_tables([?TABLE], 20000) of
         {timeout, RemainingTabs} ->
             throw(RemainingTabs);
         ok ->
@@ -95,7 +96,7 @@ init(_CacheConfig) ->
 set(Key, Value) ->
     Now = {Today, _} = calendar:universal_time(),
     Write = fun() ->
-                    case mnesia:read(qdecp_cache, Key) of
+                    case mnesia:read(?TABLE, Key) of
                         [#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
                             ok; % This key is already up-to-date, don't re-write it
                         _ ->
@@ -107,7 +108,7 @@ set(Key, Value) ->
 
 get(Key) ->
     {Today, _} = calendar:universal_time(),
-    Read = fun() -> mnesia:read(qdecp_cache, Key) end,
+    Read = fun() -> mnesia:read(?TABLE, Key) end,
     case mnesia:activity(sync_dirty, Read, [], mnesia_frag) of
         [Cached=#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
             lager:debug("Found match ~p, ~p", [Key, Today]),

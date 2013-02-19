@@ -63,7 +63,7 @@ cache_key(Req, Config) ->
     KeyParts = lists:map(fun(Part) -> cache_key_parts(Req, Cookies, Part) end, Parts),
 
     lager:debug("Cache Key: ~p", [KeyParts]),
-    iolist_to_binary(KeyParts).
+    iolist_to_binary(join(KeyParts, "_")).
 
 cache_key_parts(Req, _Cookies, method) ->
     {Method, _} = cowboy_req:method(Req),
@@ -98,3 +98,15 @@ apply_until([Mod | Modules], Fun, Args) ->
         {ok, Val} -> {ok, Val, Mod};
         _ -> apply_until(Modules, Fun, Args)
     end.
+
+join(L, Sep) ->
+    join(L, Sep, []).
+
+join([], _, Acc) ->
+    lists:reverse(Acc);
+join([Last], Sep, Acc) ->
+    join([], Sep, [Last | Acc]);
+join([Part | Rest], Sep, Acc) ->
+    join(Rest, Sep, [[Part, Sep] | Acc]).
+
+

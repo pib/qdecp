@@ -75,10 +75,10 @@ cache_key_parts(_Req, Cookies, {cookie, Name}) ->
     proplists:get_value(Name, Cookies);
 cache_key_parts(_Req, Cookies, {sub_cookie, CookieName, SubCookieName, Div}) ->
     case proplists:get_value(CookieName, Cookies) of
-        undefined -> undefined;            
+        undefined -> "";            
         Cookie ->
             SubCookies = qdecp_cookie:parse_sub_cookies(Cookie, Div),
-            proplists:get_value(SubCookieName, SubCookies)
+            proplists:get_value(SubCookieName, SubCookies, "")
     end.
 
 apply_all(Fun, Args) ->

@@ -61,12 +61,12 @@ init([]) ->
     case mnesia:create_table(Table, [{disc_copies, [node()]}]) of
         {atomic, ok} -> ok;
         {aborted, {already_exists, Table}} -> ok;
-        Else -> throw(Else)
+        Else -> throw({create_table, Else})
     end,
 
     case mnesia:wait_for_tables([Table], 20000) of
         {timeout, RemainingTabs} ->
-            throw(RemainingTabs);
+            throw({timeout, RemainingTabs});
         ok ->
             ok
     end,

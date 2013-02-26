@@ -85,7 +85,6 @@ manage_db(Config, [flush | Rest]) ->
     manage_db(Config, Rest).
 
 init(_CacheConfig) ->
-    mnesia:start(),
     case mnesia:wait_for_tables([?TABLE], 20000) of
         {timeout, RemainingTabs} ->
             throw(RemainingTabs);

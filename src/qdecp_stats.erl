@@ -57,7 +57,6 @@ start_link() ->
 init([]) ->
     Table = list_to_atom("qdecp_stats_" ++ atom_to_list(node())),
 
-    mnesia:start(),
     case mnesia:create_table(Table, [{disc_copies, [node()]}]) of
         {atomic, ok} -> ok;
         {aborted, {already_exists, Table}} -> ok;

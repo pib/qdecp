@@ -4,7 +4,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0, mnesia_start_link/0, mnesia_init/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -24,5 +24,21 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    {ok, { {one_for_one, 5, 10}, [?CHILD(mnesia_sup, supervisor), ?CHILD(qdecp_stats, worker)]} }.
+    {ok, { {one_for_one, 5, 10},
+           [
+            {mnesia_sup, {qdecp_sup, mnesia_start_link, []}, permanent, 5000, supervisor, [mnesia_sup]},
+            ?CHILD(qdecp_stats, worker)
+           ]}}.
 
+mnesia_start_link() ->
+    proc_lib:start_link(qdecp_sup, mnesia_init, [self()]).
+
+mnesia_init(Parent) ->
+    case mnesia_sup:start() of
+        {ok, Pid} ->
+            proc_lib:init_ack(Parent, {ok, Pid});
+        {error, {already_started, Pid}} ->
+            proc_lib:init_ack(Parent, {ok, Pid})
+    end.
+    
+    

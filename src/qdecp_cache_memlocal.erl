@@ -9,7 +9,7 @@
 -module(qdecp_cache_memlocal).
 -behavior(qdecp_cache_module).
 
--define(CACHE, qdecp_response_cache).
+-define(CACHE, qdecp_cache_memlocal).
 
 %% API
 -export([init/1, get/1, set/2]).

@@ -13,6 +13,7 @@
 -export([create_db/0, manage_db/1, init/1, get/1, set/2]).
 
 -define(TABLE, qdecp_cache).
+-define(POOL, qdecp_mnesia_workers).
 -record(qdecp_cache, {key, value, created_at}).
 
 %%%===================================================================
@@ -84,13 +85,14 @@ manage_db(Config, [flush | Rest]) ->
     mnesia:activity(sync_dirty, fun() -> mnesia:clear_table(?TABLE) end, [], mnesia_frag),
     manage_db(Config, Rest).
 
-init(_CacheConfig) ->
-    case mnesia:wait_for_tables([?TABLE], 20000) of
-        {timeout, RemainingTabs} ->
-            throw(RemainingTabs);
-        ok ->
-            ok
-    end.
+init(CacheConfig) ->
+    MnesiaConfig = proplists:get_value(mnesia, CacheConfig, []),
+    mnesia:start(),
+    PoolArgs = [{name, {local, ?POOL}},
+                {size, proplists:get_value(write_pool_size, MnesiaConfig, 5)},
+                {worker_module, qdecp_generic_worker}],
+    supervisor:start_child(qdecp_sup, poolboy:child_spec(?POOL, PoolArgs, [])),
+    ok.
 
 set(Key, Value) ->
     Now = {Today, _} = calendar:universal_time(),
@@ -102,7 +104,9 @@ set(Key, Value) ->
                             mnesia:write(#qdecp_cache{key=Key, value=Value, created_at=Now})
                     end
             end,
-    mnesia:activity(async_dirty, Write, [], mnesia_frag),
+    qdecp_generic_worker:async_call(
+      ?POOL,
+      fun() -> mnesia:activity(sync_dirty, Write, [], mnesia_frag) end),
     ok.
 
 get(Key) ->

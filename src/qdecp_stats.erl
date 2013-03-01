@@ -70,8 +70,6 @@ init([]) ->
                 {size, proplists:get_value(write_pool_size, StatsConfig, 5)},
                 {worker_module, qdecp_generic_worker}],
     supervisor:start_child(qdecp_sup, poolboy:child_spec(?POOL, PoolArgs, [])),
-    ok.
-    
 
     {ok, #state{table=Table}}.
 

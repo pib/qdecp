@@ -12,7 +12,7 @@
 -behavior(poolboy_worker).
 
 %% API
--export([start_link/0]).
+-export([start_link/1, call/2, async_call/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -39,8 +39,8 @@ async_call(Pool, Fun) ->
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link(?MODULE, [], []).
+start_link(Args) ->
+    gen_server:start_link(?MODULE, Args, []).
 
 %%%===================================================================
 %%% gen_server callbacks

@@ -50,7 +50,17 @@ manage_db(Config, [start | Rest]) ->
     Nodes = proplists:get_value(nodes, Config, [node()]),
     %% Start mnesia on each node
     lists:foreach(fun(Node) -> spawn(Node, mnesia, start, []) end, Nodes),
-    manage_db(Config, Rest);
+    manage_db(Config, [wait_for_mnesia | Rest]);
+
+manage_db(Config, [wait_for_mnesia | Rest]) ->
+    Nodes = proplists:get_value(nodes, Config, [node()]),
+    %% Start mnesia on each node
+    case length(Nodes) =:= length(mnesia:system_info(running_db_nodes)) of
+        true -> manage_db(Config, Rest);
+        false ->
+            receive after 1000 -> ok end,
+            manage_db(Config, [wait_for_mnesia | Rest])
+    end;
 
 manage_db(Config, [create_tables | Rest]) ->
     Nodes = proplists:get_value(nodes, Config, [node()]),

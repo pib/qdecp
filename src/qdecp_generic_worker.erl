@@ -40,6 +40,7 @@ async_call(Pool, Fun) ->
 %% @end
 %%--------------------------------------------------------------------
 start_link(Args) ->
+    lager:debug("Starting generic worker with args ~p", [Args]),
     gen_server:start_link(?MODULE, Args, []).
 
 %%%===================================================================

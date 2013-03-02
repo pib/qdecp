@@ -55,7 +55,7 @@ start_link() ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
+init(_Args) ->
     Table = list_to_atom("qdecp_stats_" ++ atom_to_list(node())),
 
     case mnesia:create_table(Table, [{disc_copies, [node()]}]) of
@@ -65,11 +65,15 @@ init([]) ->
             lager:error("Could not create table ~p: ~p", [Table, Else])
     end,
 
-    StatsConfig = application:get_env(qdecp, stats, []),
+    StatsConfig = case application:get_env(qdecp, stats) of
+                      undefined -> [];
+                      Other -> Other
+                  end,
+
     PoolArgs = [{name, {local, ?POOL}},
                 {size, proplists:get_value(write_pool_size, StatsConfig, 5)},
                 {worker_module, qdecp_generic_worker}],
-    supervisor:start_child(qdecp_sup, poolboy:child_spec(?POOL, PoolArgs, [])),
+    poolboy:start_link(PoolArgs, []),
 
     {ok, #state{table=Table}}.
 

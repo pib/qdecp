@@ -32,8 +32,10 @@ start_request(Req) ->
             {ok, Body, _} = cowboy_req:body(Req),
             {ok, ReqId} = send_req(Ip, post, Url, Headers, Body),
             {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
+        <<"CONNECT">> ->
+            {upgrade, protocol, qdecp_tcp_proxy};
         _ ->
-            {ok, Req2} = cowboy_req:reply(405, [{<<"allow">>, <<"GET, POST">>}], Req),
+            {ok, Req2} = cowboy_req:reply(405, [{<<"allow">>, <<"GET, POST, CONNECT">>}], Req),
             qdecp_stats:log_event({response, '405'}),
             {ok, Req2, #state{}}
     end.

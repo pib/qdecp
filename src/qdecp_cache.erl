@@ -17,18 +17,22 @@
 init() ->
     apply_all(init, [config()]).
 
-set(Req, Response) ->
+set(Req, Response={Code, _, _}) ->
     {Method, _} = cowboy_req:method(Req),
     Config = config(),
     Key = cache_key(Req, Config),
-    case Method of
-        <<"GET">> ->
+    case {Method, Code} of
+        {<<"GET">>, "200"} ->
             lager:debug("Caching ~p ~p", [Key, Response]),
             qdecp_stats:log_event({cache_set}),
             apply_all(set, [Key, Response]);
-        _ ->
-            lager:debug("Not caching ~p ~p", [Key, Response]),
-            qdecp_stats:log_event({cache_not_set, wrong_method})
+        {_, "200"} ->
+            lager:debug("Non-GET, not caching ~p ~p", [Key, Response]),
+            qdecp_stats:log_event({cache_not_set, non_get});
+        {_, _} ->
+            lager:debug("Non-200 response, not caching ~p ~p", [Key, Response]),
+            qdecp_stats:log_event({cache_not_set, non_200})
+
     end.
 
 get(Req) ->

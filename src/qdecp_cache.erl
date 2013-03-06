@@ -37,7 +37,11 @@ set(Req, Response={Code, _, _}) ->
 
 get(Req) ->
     Key = cache_key(Req, config()),
-    case apply_until(get, [Key]) of
+    Lookup = case cowboy_req:method(Req) of
+        {<<"GET">>, _} -> apply_until(get, [Key]);
+        _ -> none
+    end,
+    case Lookup of
         {ok, Cached, Mod} ->
             lager:debug("Response was in cache ~p ~p", [Key, Cached]),
             qdecp_stats:log_event({cache_hit, Mod}),

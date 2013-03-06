@@ -92,7 +92,7 @@ cache_key_parts(_Req, Cookies, {sub_cookie, CookieName, SubCookieName, Div}) ->
 apply_all(Fun, Args) ->
     lists:map(fun(Mod) ->
                       lager:debug("Applying ~p:~p(~p)", [Mod, Fun, Args]),
-                      apply(Mod, Fun, Args)
+                      catch apply(Mod, Fun, Args)
               end, config(modules, [])).
 
 apply_until(Fun, Args) ->
@@ -102,7 +102,7 @@ apply_until([], _Fun, _Args) ->
     none;
 apply_until([Mod | Modules], Fun, Args) ->
     lager:debug("Trying Mod ~p, ~p", [Mod, Args]),
-    case apply(Mod, Fun, Args) of
+    case catch apply(Mod, Fun, Args) of
         {ok, Val} -> {ok, Val, Mod};
         _ -> apply_until(Modules, Fun, Args)
     end.

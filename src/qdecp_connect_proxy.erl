@@ -1,12 +1,7 @@
 -module(qdecp_connect_proxy).
 
--behavior(cowboy_sub_protocol).
-
 %% API.
 -export([upgrade/4]).
-
-%% Internal.
--export([handler_loop/4]).
 
 -record(state, {
           req :: cowboy_req:req(),
@@ -22,12 +17,15 @@
 	-> {ok, Req, Env} | {error, 400, Req}
 	| {suspend, module(), atom(), [any()]}
 	when Req::cowboy_req:req(), Env::cowboy_middleware:env().
-upgrade(Req, Env, Handler, HandlerOpts) ->
+upgrade(Req, Env, _Handler, _HandlerOpts) ->
 	{_, ListenerPid} = lists:keyfind(listener, 1, Env),
 	ranch_listener:remove_connection(ListenerPid),
 
+    lager:debug("Upgrading request via CONNECT ~p", [Req]),
+
     case init_proxy(Req, Env) of
         {ok, State} ->
+            lager:debug("Connected, entering loop ~p", [State]),
             loop(State);
         {error, Reason, Req2} ->
             lager:error("Connect failed: ~p, ~p", [Reason, Req2]),
@@ -35,24 +33,29 @@ upgrade(Req, Env, Handler, HandlerOpts) ->
     end.
 
 init_proxy(Req, Env) ->
+	[Host, Port, InSock, Transport] = cowboy_req:get([host, port, socket, transport], Req),
     Messages = Transport:messages(),
-	[Host, Port, Socket, Transport] = cowboy_req:get([host, port, socket, transport], Req),
-    {ok, {Ip, _Port}} = inet:sockname(Socket),
+    {ok, {Ip, _Port}} = inet:sockname(InSock),
     OutSockOpts = [{mode, binary},
                    {active, false},
                    {ip, Ip},
                    {linger, {true, 5}}
                   ],
     Transport:setopts(InSock, [{linger, {true, 5}}]),
-    case gen_tcp:connect(Host, Port, OutSockOpts) of
+    lager:debug("Connecting to ~p ~p with opts ~p", [Host, Port, OutSockOpts]),
+    case gen_tcp:connect(binary_to_list(Host), Port, OutSockOpts) of
         {ok, OutSock} ->
+            lager:debug("Opened outgoing socket ~p ~p", [Host, Port]),
             qdecp_stats:log_event({request_out, connect}),            
-            State = #state{env=Env, in_socket=Socket, out_socket=OutSock,
+            State = #state{env=Env, in_socket=InSock, out_socket=OutSock,
                            transport=Transport, messages=Messages, req=Req},
+            Transport:send(InSock, [<<"HTTP/1.0 200 Connection established\r\n">>,
+                                    <<"Proxy-agent: qdecp/1\r\n\r\n">>]),
             Transport:setopts(InSock, [{active, once}]),
             inet:setopts(OutSock, [{active, once}]),
             {ok, State};
         {error, Reason} ->
+            lager:error("Failed to open outgoing socket ~p ~p ~p", [Host, Port, Reason]),
             qdecp_stats:log_event({connect_connect_error, Reason}),
             {error, Reason}
     end.
@@ -72,7 +75,7 @@ loop(State) ->
             Transport:setopts(InSock, [{active, once}]),
             loop(State);
         {Closed, InSock} ->
-            lager:debug("Incoming socket closed", [InSock]),
+            lager:debug("Incoming socket closed ~p", [InSock]),
             gen_tcp:close(OutSock),
             qdecp_stats:log_event({connect_close, insock}),
             {ok, Req, [{result, closed} | Env]};
@@ -85,7 +88,7 @@ loop(State) ->
             inet:setopts(OutSock, [{active, once}]),
             loop(State);
         {tcp_closed, OutSock} ->
-            lager:debug("Outgoing socket closed", [OutSock]),
+            lager:debug("Outgoing socket closed ~p", [OutSock]),
             Transport:close(InSock),
             qdecp_stats:log_event({connect_close, outsock}),
             {ok, Req, [{result, closed} | Env]};

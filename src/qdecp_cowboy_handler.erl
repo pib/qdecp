@@ -27,11 +27,11 @@ start_request(Req) ->
     case Method of
         <<"GET">> ->
             {ok, ReqId} = send_req(Ip, get, Url, Headers, []),
-            {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
+            {loop, Req, #state{req_id=ReqId}, hibernate};
         <<"POST">> ->
             {ok, Body, _} = cowboy_req:body(Req),
             {ok, ReqId} = send_req(Ip, post, Url, Headers, Body),
-            {loop, Req, #state{req_id=ReqId}, 5000, hibernate};
+            {loop, Req, #state{req_id=ReqId}, hibernate};
         <<"CONNECT">> ->
             {upgrade, protocol, qdecp_connect_proxy};
         _ ->

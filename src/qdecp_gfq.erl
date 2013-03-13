@@ -11,13 +11,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, get/2, get/3, set/3]).
+-export([start_link/2, get/2, get/3, set/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE). 
+%% Worker callbacks
+-export([worker_loop/2]).
 
 -record(state, {name, get_set_mod, worker, getq, getdict, setq}).
 
@@ -28,7 +29,11 @@ get(Name, Key) ->
     get(Name, Key, infinity).
 
 get(Name, Key, Timeout) ->
-    gen_server:call(Name, {get, Key}, Timeout).
+    case catch gen_server:call(Name, {get, Key}, Timeout) of
+        {'EXIT', {timeout, _}} ->
+            none;
+        Else -> Else
+    end.
 
 set(Name, Key, Val) ->
     gen_server:cast(Name, {set, Key, Val}).
@@ -84,31 +89,25 @@ handle_call({get_job}, From, State=#state{getq=GetQ, setq=SetQ, worker={WPid, _}
     case {queue:peek(GetQ), queue:peek(SetQ)} of
         {empty, empty} ->
             {noreply, State#state{worker={WPid, From}}};
-        {value, {GetKey, _}} ->
-            {reply, {get, GetKey}, State#state{worker={WPid, noref}};
-        {value, {_, {SetKey, SetVal}}} ->
-            {reply, {set, SetKey, SetVal}, State#state{worker={WPid, noref}}};
+        {{value, GetKey}, _} ->
+            {reply, {get, GetKey}, State#state{worker={WPid, noref}}};
+        {empty, {value, {SetKey, SetVal}}} ->
+            {reply, {set, SetKey, SetVal}, State#state{worker={WPid, noref}}}
     end;
 
 handle_call({get, Key}, From, State=#state{getq=GetQ, getdict=GetDict,
-                                           worker={WPid, noref}}) ->
+                                           worker={_, noref}}) ->
     NewGetQ = queue:in(Key, GetQ),
     NewGetDict = dict:append(Key, From, GetDict),
-    NewWorker = case WRef of
-                    noref -> {WPid, noref};
-                    _ ->
-                        gen_server:reply(WRef, {get, Key}),
-                        {WPid, noref}
-                end,
-    {noreply, State#state{getq=NewGetQ, getdict=NewGetDict, worker=NewWorker}};
+    {noreply, State#state{getq=NewGetQ, getdict=NewGetDict}};
 
 handle_call({get, Key}, From, State=#state{worker={WPid, WRef}}) ->
     gen_server:reply(WRef, {get, Key}),
     handle_call({get, Key}, From, State#state{worker={WPid, noref}});
     
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call(Request, From, State) ->
+    lager:warning("Unhandled call: ~p from ~p with state ~p", [Request, From, State]),
+    {reply, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -120,29 +119,30 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({get_done, Key, Value}, State=state#{getq=GetQ, getdict=GetDict}) ->
+handle_cast({get_done, Key, Value}, State=#state{getq=GetQ, getdict=GetDict}) ->
     NewGetQ = queue:filter(fun(Item) -> Item =/= Key end, GetQ),
     NewGetDict = dict:erase(Key, GetDict),
     ToReply = case dict:find(Key, GetDict) of
-                  {ok, Value} -> Value;
+                  {ok, Refs} -> Refs;
                   error -> []
               end,
     lists:foreach(fun(Ref) ->
                           gen_server:reply(Ref, Value)
                   end, ToReply),
-    {noreply, State#{getq=NewGetQ, getdict=NewGetDict}};
+    {noreply, State#state{getq=NewGetQ, getdict=NewGetDict}};
 
-handle_cast({set_done, Key}, State#{setq=SetQ}) ->
-    {noreply, State#{setq=queue:drop(SetQ)}};
+handle_cast({set_done, _}, State=#state{setq=SetQ}) ->
+    {noreply, State#state{setq=queue:drop(SetQ)}};
 
-handle_cast({set, Key, Value}, State#{setq=SetQ, worker={WPid, noref}}) ->
-    {noreply, State#{setq=queue:in({set, Key, Value}, SetQ)}};
+handle_cast({set, Key, Value}, State=#state{setq=SetQ, worker={_, noref}}) ->
+    {noreply, State#state{setq=queue:in({set, Key, Value}, SetQ)}};
 
 handle_cast({set, Key, Value}, State=#state{worker={WPid, WRef}}) ->
     gen_server:reply(WRef, {set, Key, Value}),
-    handle_cast({set, Key, Value}, From, State#state{worker={WPid, noref}});
+    handle_cast({set, Key, Value}, State#state{worker={WPid, noref}});
 
-handle_cast(_Msg, State) ->
+handle_cast(Msg, State) ->
+    lager:warning("Unhandled cast: ~p with state ~p", [Msg, State]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -159,10 +159,12 @@ handle_info({'EXIT', From, Reason}, State=#state{name=Name,
                                                  get_set_mod=GetSetMod,
                                                  worker={WPid, _}}
            ) when From =:= WPid ->
+    lager:warning("gfq child ~p for ~p exited with reason ~p", [WPid, GetSetMod, Reason]),
     WorkerPid = spawn_link(?MODULE, worker_loop, [Name, GetSetMod]),
     {noreply, State#state{worker={WorkerPid, noref}}};
 
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    lager:warning("Unhandled message: ~p with state ~p", [Info, State]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -198,9 +200,10 @@ worker_loop(Name, GetSetMod) ->
     case gen_server:call(Name, {get_job}, infinity) of
         {get, Key} ->
             Value = GetSetMod:do_get(Key),
-            gen_server:call(Name, {get_done, Key, Value}, infinity);
+            gen_server:cast(Name, {get_done, Key, Value});
         {set, Key, Value} ->
             Result = GetSetMod:do_set(Key, Value),
-            gen_server:call(Name, {set_done, Key}, infinity)
+            lager:debug("worker_loop {set, ~p, ~p} got ~p", [Key, Value, Result]),
+            gen_server:cast(Name, {set_done, Key})
     end,
     worker_loop(Name, GetSetMod).

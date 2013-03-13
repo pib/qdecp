@@ -32,7 +32,7 @@ set(Key, Value) ->
     qdecp_gfq:set(?Q, Key, Value).
 
 get(Key) ->
-    qdecp_gfq:get(?Q, Key).
+    qdecp_gfq:get(?Q, Key, 100).
 
 
 %% Callback API

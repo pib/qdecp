@@ -122,8 +122,9 @@ send_req(_, _, Url, _, _, 0) ->
     lager:error("Too many retries, giving up on connection to ~p", [Url]),
     {error, 503};
 send_req(Ip, Method, Url, Headers, Body, Retries) ->
-    case ibrowse:send_req(binary_to_list(Url), Headers, Method, Body,
-                          [{stream_to, self()},{socket_options, [{ip, Ip}]}]) of
+    case ibrowse:send_req(binary_to_list(Url), [{"connection", "close"} | Headers],
+                          Method, Body, [{stream_to, self()},
+                                         {socket_options, [{ip, Ip}]}]) of
         {ibrowse_req_id, ReqId} -> 
             qdecp_stats:log_event({request_out, Method}),
             {ok, ReqId};

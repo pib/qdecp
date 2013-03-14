@@ -135,7 +135,7 @@ handle_cast({set_done, _}, State=#state{setq=SetQ}) ->
     {noreply, State#state{setq=queue:drop(SetQ)}};
 
 handle_cast({set, Key, Value}, State=#state{setq=SetQ, worker={_, noref}}) ->
-    {noreply, State#state{setq=queue:in({set, Key, Value}, SetQ)}};
+    {noreply, State#state{setq=queue:in({Key, Value}, SetQ)}};
 
 handle_cast({set, Key, Value}, State=#state{worker={WPid, WRef}}) ->
     gen_server:reply(WRef, {set, Key, Value}),

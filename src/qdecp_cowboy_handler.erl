@@ -9,10 +9,9 @@ init({tcp, http}, Req, _) ->
     qdecp_stats:log_event({request_in, list_to_atom(string:to_lower(binary_to_list(Method)))}),
     case qdecp_cache:get(Req) of
         {ok, {Code, Headers, Body}} ->
-            self() ! {ibrowse_async_headers, none, Code, Headers},
-            self() ! {ibrowse_async_response, none, Body},
             self() ! {ibrowse_async_response_end, none},
-            {loop, Req, #state{req_id=none}};
+            {loop, Req, #state{req_id=none, res_code=Code,
+                               res_headers=Headers, res_body=Body}};
         none ->
             start_request(Req)
     end.
@@ -28,7 +27,7 @@ start_request(Req) ->
         <<"GET">> ->
             case send_req(Ip, get, Url, Headers, [], 10) of
                 {ok, ReqId} ->
-                    {loop, Req, #state{req_id=ReqId}, hibernate};
+                    {loop, Req, #state{req_id=ReqId}};
                 {error, Code} ->
                     {ok, Req2} = cowboy_req:reply(Code, [], Req),
                     {shutdown, Req2, #state{}}
@@ -38,7 +37,7 @@ start_request(Req) ->
             {ok, Body, _} = cowboy_req:body(Req),
             case send_req(Ip, post, Url, Headers, Body, 10) of
                  {ok, ReqId} ->
-                    {loop, Req, #state{req_id=ReqId}, hibernate};
+                    {loop, Req, #state{req_id=ReqId}};
                 {error, Code} ->
                     {ok, Req2} = cowboy_req:reply(Code, [], Req),
                     {shutdown, Req2, #state{}}
@@ -55,21 +54,21 @@ info({ibrowse_async_headers, ReqId, Code, Headers}, Req, State) ->
     case State#state.req_id of
         ReqId ->
             %% The request id matches, so we're good
-            {loop, Req, State#state{res_code=Code, res_headers=Headers}, hibernate};
+            {loop, Req, State#state{res_code=Code, res_headers=Headers}};
         _ ->
             %% Request id didn't match, ignore it
             lager:warning("Ignoring headers from different request id: ~p", [ReqId]),
-            {loop, Req, State, hibernate}
+            {loop, Req, State}
     end;
 info({ibrowse_async_response, ReqId, Body}, Req, State) ->
     case State#state.req_id of
         ReqId ->
             %% The request id matches, so we're good
-            {loop, Req, State#state{res_body=[Body | State#state.res_body]}, hibernate};
+            {loop, Req, State#state{res_body=[Body | State#state.res_body]}};
         _ ->
             %% Request id didn't match, ignore it
             lager:warning("Ignoring response from different request id: ~p", [ReqId]),
-            {loop, Req, State, hibernate}
+            {loop, Req, State}
     end;
 info({ibrowse_async_response_end, ReqId}, Req, State) ->
     case State#state.res_code of
@@ -90,12 +89,12 @@ info({ibrowse_async_response_end, ReqId}, Req, State) ->
         _ ->
             %% Request id didn't match, ignore it
             lager:warning("Ignoring response end from different request id: ~p", [ReqId]),
-            {loop, Req, State, hibernate}
+            {loop, Req, State}
     end;
 
 info(Message, Req, State) ->
     lager:info("Ignoring unrecognized message ~p", [Message]),
-    {loop, Req, State, hibernate}.
+    {loop, Req, State}.
 
 terminate(Reason, _Req, State) ->
     case Reason of

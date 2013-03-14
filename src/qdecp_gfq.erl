@@ -199,10 +199,10 @@ code_change(_OldVsn, State, _Extra) ->
 worker_loop(Name, GetSetMod) ->
     case gen_server:call(Name, {get_job}, infinity) of
         {get, Key} ->
-            Value = GetSetMod:do_get(Key),
+            Value = (catch GetSetMod:do_get(Key)),
             gen_server:cast(Name, {get_done, Key, Value});
         {set, Key, Value} ->
-            Result = GetSetMod:do_set(Key, Value),
+            Result = (catch GetSetMod:do_set(Key, Value)),
             lager:debug("worker_loop {set, ~p, ~p} got ~p", [Key, Value, Result]),
             gen_server:cast(Name, {set_done, Key})
     end,

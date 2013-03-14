@@ -37,8 +37,8 @@ get(Key) ->
 
 %% Callback API
 do_set(Key, Value) ->
-    cadfaerl:put_ttl(?CACHE, Key, Value, 86400),
+    gen_server:call(?CACHE, {put, Key, Value, 86400}, infinity),
     ok.
 
 do_get(Key) ->
-    cadfaerl:get(?CACHE, Key).
+    gen_server:call(?CACHE, {get, Key, undefined, undefined}, infinity).

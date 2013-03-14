@@ -93,7 +93,7 @@ info({ibrowse_async_response_end, ReqId}, Req, State) ->
     end;
 
 info(Message, Req, State) ->
-    lager:info("Ignoring unrecognized message ~p", [Message]),
+    lager:debug("Ignoring unrecognized message ~p", [Message]),
     {loop, Req, State}.
 
 terminate(Reason, _Req, State) ->

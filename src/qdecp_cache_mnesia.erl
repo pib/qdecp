@@ -13,7 +13,8 @@
 -export([create_db/0, manage_db/1, init/1, get/1, set/2]).
 
 -define(TABLE, qdecp_cache).
--define(POOL, qdecp_mnesia_workers).
+-define(READPOOL, qdecp_mnesia_read_workers).
+-define(WRITEPOOL, qdecp_mnesia_write_workers).
 -record(qdecp_cache, {key, value, created_at}).
 
 %%%===================================================================
@@ -98,10 +99,10 @@ manage_db(Config, [flush | Rest]) ->
 init(CacheConfig) ->
     MnesiaConfig = proplists:get_value(mnesia, CacheConfig, []),
     mnesia:start(),
-    PoolArgs = [{name, {local, ?POOL}},
-                {size, proplists:get_value(write_pool_size, MnesiaConfig, 5)},
+    WritePoolArgs = [{name, {local, ?WRITEPOOL}},
+                {size, proplists:get_value(read_pool_size, MnesiaConfig, 1)},
                 {worker_module, qdecp_generic_worker}],
-    supervisor:start_child(qdecp_sup, poolboy:child_spec(?POOL, PoolArgs, [])),
+    supervisor:start_child(qdecp_sup, poolboy:child_spec(?WRITEPOOL, WritePoolArgs, [])),
     ok.
 
 set(Key, Value) ->
@@ -115,7 +116,7 @@ set(Key, Value) ->
                     end
             end,
     qdecp_generic_worker:async_call(
-      ?POOL,
+      ?WRITEPOOL,
       fun() -> mnesia:activity(sync_dirty, Write, [], mnesia_frag) end),
     ok.
 

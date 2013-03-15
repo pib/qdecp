@@ -8,8 +8,7 @@
                   stdlib,
                   lager,
                   ranch,
-                  cowboy,
-                  ibrowse
+                  cowboy
                  ]},
   {mod, { qdecp_app, []}},
   {env, [

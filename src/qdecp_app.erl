@@ -15,14 +15,20 @@ start(_StartType, _StartArgs) ->
                 undefined -> 8888
             end,
 
+    HttpClient  = case application:get_env(qdecp, http_client) of
+                      {ok, C} -> C;
+                      undefined -> qdecp_client_lhttpc
+                  end,
+
     {ok, Pid} = qdecp_sup:start_link(),
     qdecp_cache:init(),
+    HttpClient:init(),
 
     Dispatch = cowboy_router:compile([
                 %% {Host, list({Path, Handler, Opts})}
                 {"127.0.0.1", [{"/stats", qdecp_stats_handler, []}]},
                 {"localhost", [{"/stats", qdecp_stats_handler, []}]},
-                {'_', [{'_', qdecp_cowboy_handler, []}]}
+                {'_', [{'_', qdecp_cowboy_handler, [HttpClient]}]}
                ]),
 
     %% Name, NbAcceptors, TransOpts, ProtoOpts

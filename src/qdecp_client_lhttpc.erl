@@ -22,15 +22,23 @@ request(Ip, Method, Url, Headers, Body, Retries) ->
     Opts = [{pool, Pool}, {pool_ensure, true},
             {connect_options, [{ip, Ip}]}
            ],
+
+    case whereis(Pool) of
+        undefined ->
+            Res = lhttpc:add_pool(Pool),
+            lager:info("Started pool ~p with result ~p", [Pool, Res]);
+        _ -> ok
+    end,
     case lhttpc:request(binary_to_list(Url), Method, Headers, Body, 5000, Opts) of
         {ok, {{Code, _Reason}, ResponseHeaders, ResponseBody}} ->
             {ok, Code, ResponseHeaders, ResponseBody};
-        {error, Reason} ->
+        Else ->
             case Retries of
                 0 ->
                     {error, 500};
                 _ ->
-                    lager:error("Error in lhttpc request ~p: ~p, retrying", [Url, Reason]),
+                    lager:error("Error in lhttpc request ~p: ~p, retrying", [Url, Else]),
+                    qdecp_stats:log_event({request_retry}),
                     request(Ip, Method, Url, Headers, Body, Retries - 1)
             end
     end.

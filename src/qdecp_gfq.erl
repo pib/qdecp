@@ -203,7 +203,6 @@ worker_loop(Name, GetSetMod) ->
             gen_server:cast(Name, {get_done, Key, Value});
         {set, Key, Value} ->
             Result = (catch GetSetMod:do_set(Key, Value)),
-            lager:debug("worker_loop {set, ~p, ~p} got ~p", [Key, Value, Result]),
             gen_server:cast(Name, {set_done, Key})
     end,
     worker_loop(Name, GetSetMod).

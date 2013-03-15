@@ -12,7 +12,9 @@ handle(Req, State) ->
     qdecp_stats:log_event({request_in, list_to_atom(string:to_lower(binary_to_list(Method)))}),
     case qdecp_cache:get(Req) of
         {ok, {Code, Headers, Body}} ->
+            qdecp_cache:set(Req, {Code, Headers, Body}),
             {ok, Req2} = cowboy_req:reply(Code, Headers, Body, Req),
+            qdecp_stats:log_event({response, list_to_atom(integer_to_list(Code))}),
             {ok, Req2, State};
         none ->
             do_request(Req, State)
@@ -40,12 +42,13 @@ do_request(Req, State=#state{http_client=HttpClient}) ->
     case Reply of
         {ok, Code, Headers, Body} ->
             CleanHeaders = clean_response_headers(Headers),
-            qdecp_cache:set(Req, {Code, Headers, Body}),
+            qdecp_cache:set(Req, {Code, CleanHeaders, Body}),
             {ok, Req2} = cowboy_req:reply(Code, CleanHeaders, Body, Req),
             qdecp_stats:log_event({response, list_to_atom(integer_to_list(Code))}),
             {ok, Req2, State};
         {error, Code} ->
             {ok, Req2} = cowboy_req:reply(Code, [], Req),
+            qdecp_stats:log_event({response, list_to_atom(integer_to_list(Code))}),
             {ok, Req2, State};
         Else -> Else
     end.

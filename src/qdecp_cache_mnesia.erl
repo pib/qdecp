@@ -75,6 +75,7 @@ manage_db(Config, [create_tables | Rest]) ->
             [{attributes, record_info(fields, qdecp_cache)},
              {index, [created_at]},
              {frag_properties, [
+                                {hash_module, mnesia_frag_chash},
                                 {node_pool, Nodes},
                                 {n_fragments, Fragments},
                                 {n_ram_copies, RamCopies},

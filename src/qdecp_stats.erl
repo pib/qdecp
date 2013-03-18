@@ -57,8 +57,8 @@ start_link() ->
 %%--------------------------------------------------------------------
 init(_Args) ->
     StatsConfig = case application:get_env(qdecp, stats) of
-                      undefined -> [];
-                      Other -> Other
+                      {ok, Config} -> Config;
+                      _ -> []
                   end,
 
     ProcessEvery = proplists:get_value(process_every, StatsConfig, 1000000),

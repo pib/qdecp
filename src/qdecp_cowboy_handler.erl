@@ -17,7 +17,13 @@ handle(Req, State) ->
             qdecp_stats:log_event({response, list_to_atom(integer_to_list(Code))}),
             {ok, Req2, State};
         none ->
-            do_request(Req, State)
+            case catch do_request(Req, State) of
+                {error, Where, Err} ->
+                    lager:error("Error ~p: ~p", [Where, Err]),
+                    {shutdown, Req, State};
+                Response ->
+                    Response
+            end
     end.
 
 do_request(Req, State=#state{http_client=HttpClient}) ->
@@ -25,7 +31,11 @@ do_request(Req, State=#state{http_client=HttpClient}) ->
     {Url, _} = cowboy_req:url(Req),
     ReqHeaders = clean_request_headers(Req),
     [Socket] = cowboy_req:get([socket], Req),
-    {ok, {Ip, _Port}} = inet:sockname(Socket),
+    Ip = case inet:sockname(Socket) of
+             {ok, {IpAddr, _Port}} -> IpAddr;
+             {error, Err} ->
+                 throw({error, "Getting IP from socket", Err})
+         end,
     lager:debug("~p ~p ~p", [Ip, ReqMethod, Url]),
     Reply = case ReqMethod of
                 <<"GET">> ->

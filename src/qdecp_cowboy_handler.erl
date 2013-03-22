@@ -20,7 +20,8 @@ handle(Req, State) ->
             case catch do_request(Req, State) of
                 {error, Where, Err} ->
                     lager:error("Error ~p: ~p", [Where, Err]),
-                    {shutdown, Req, State};
+                    {ok, Req2} = cowboy_req:reply(500, [], "Something went horribly wrong.", Req),
+                    {ok, Req2, State};
                 Response ->
                     Response
             end
@@ -46,7 +47,7 @@ do_request(Req, State=#state{http_client=HttpClient}) ->
                 <<"CONNECT">> ->
                     {upgrade, protocol, qdecp_connect_proxy};
                 _ ->
-                    {ok, "405", [{<<"allow">>, <<"GET, POST, CONNECT">>}], []}
+                    {ok, 405, [{<<"allow">>, <<"GET, POST, CONNECT">>}], []}
             end,
 
     case Reply of

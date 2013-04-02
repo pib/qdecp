@@ -37,7 +37,14 @@ do_request(Req, State=#state{http_client=HttpClient}) ->
              {error, Err} ->
                  throw({error, "Getting IP from socket", Err})
          end,
-    lager:debug("~p ~p ~p", [Ip, ReqMethod, Url]),
+
+    {PeerIp, _} = cowboy_req:peer(Req),
+    lager:debug("~p ~p ~p from ~p", [Ip, ReqMethod, Url, PeerIp]),
+    case PeerIp == Ip of
+        true-> throw({error, "Stopping recursive request", "Peer IP is our IP!"});
+        _ -> ok
+    end,
+                
     Reply = case ReqMethod of
                 <<"GET">> ->
                     HttpClient:request(Ip, get, Url, ReqHeaders, [], 10);

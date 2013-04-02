@@ -10,11 +10,16 @@
 -behavior(qdecp_cache_module).
 
 %% API
--export([create_db/0, manage_db/1, init_cache/1, get/1, set/2]).
+-export([start_link/0, create_db/0, manage_db/1, init_cache/1, get/1, set/2]).
+
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-define(SERVER, ?MODULE).
 
 -define(TABLE, qdecp_cache).
 -define(READPOOL, qdecp_mnesia_read_workers).
 -define(WRITEPOOL, qdecp_mnesia_write_workers).
+-record(state, {}).
 -record(qdecp_cache, {key, value, created_at}).
 
 %%%===================================================================
@@ -104,6 +109,9 @@ init_cache(CacheConfig) ->
                 {size, proplists:get_value(read_pool_size, MnesiaConfig, 1)},
                 {worker_module, qdecp_generic_worker}],
     supervisor:start_child(qdecp_sup, poolboy:child_spec(?WRITEPOOL, WritePoolArgs, [])),
+    supervisor:start_child(qdecp_sup, {?SERVER, {?MODULE, start_link, []},
+                                       permanent, 5000, worker, [?MODULE]}),
+
     ok.
 
 set(Key, Value) ->
@@ -136,3 +144,27 @@ get(Key) ->
         _ ->
             none
     end.
+
+%% Gen-server stuff
+
+start_link() ->
+    gen_server:start_link(?SERVER, ?MODULE, [], []).
+
+init(_Args) ->
+    {ok, #state{}}.
+
+handle_call(_Req, _From, State) ->
+    {reply, ok, State}.
+
+handle_cast(_Req, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+

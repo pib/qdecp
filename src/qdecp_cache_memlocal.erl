@@ -24,8 +24,12 @@
 init_cache(CacheConfig) ->
     MemConfig = proplists:get_value(memlocal, CacheConfig, []),
     Size = proplists:get_value(size, MemConfig, 5000),
-    cadfaerl:start_link(?CACHE, Size),
-    qdecp_gfq:start_link(?Q, ?MODULE),
+    supervisor:start_child(qdecp_sup, {?CACHE,
+                                       {cadfaerl, start_link, [?CACHE, Size]},
+                                       permanent, 5000, worker, [cadfaerl]}),
+    supervisor:start_child(qdecp_sup, {?Q,
+                                       {qdecp_gfq, start_link, [?Q, Size]},
+                                       permanent, 5000, worker, [qdecp_gfq]}),
     ok.
 
 set(Key, Value) ->

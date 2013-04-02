@@ -10,7 +10,7 @@
 -behavior(qdecp_cache_module).
 
 %% API
--export([create_db/0, manage_db/1, init/1, get/1, set/2]).
+-export([create_db/0, manage_db/1, init_cache/1, get/1, set/2]).
 
 -define(TABLE, qdecp_cache).
 -define(READPOOL, qdecp_mnesia_read_workers).
@@ -97,7 +97,7 @@ manage_db(Config, [flush | Rest]) ->
     mnesia:activity(sync_dirty, fun() -> mnesia:clear_table(?TABLE) end, [], mnesia_frag),
     manage_db(Config, Rest).
 
-init(CacheConfig) ->
+init_cache(CacheConfig) ->
     MnesiaConfig = proplists:get_value(mnesia, CacheConfig, []),
     mnesia:start(),
     WritePoolArgs = [{name, {local, ?WRITEPOOL}},

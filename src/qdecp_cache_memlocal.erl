@@ -13,7 +13,7 @@
 -define(Q, qdecp_cache_memlocal_q).
 
 %% API
--export([init/1, get/1, set/2]).
+-export([init_cache/1, get/1, set/2]).
 
 %% Callback exports
 -export([do_get/1, do_set/2]).
@@ -21,7 +21,7 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-init(CacheConfig) ->
+init_cache(CacheConfig) ->
     MemConfig = proplists:get_value(memlocal, CacheConfig, []),
     Size = proplists:get_value(size, MemConfig, 5000),
     cadfaerl:start_link(?CACHE, Size),

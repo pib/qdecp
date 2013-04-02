@@ -12,7 +12,7 @@
 -behavior(poolboy_worker).
 
 %% API
--export([start_link/1, call/2, async_call/2]).
+-export([start_link/1, call/2, call/3, async_call/2, async_call/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -24,13 +24,17 @@
 %%% API
 %%%===================================================================
 call(Pool, Fun) ->
+    call(Pool, Fun, infinity).
+call(Pool, Fun, Timeout) ->
     poolboy:transaction(Pool,
                         fun(W) ->
                                 gen_server:call(W, Fun)
-                        end, infinity).
+                        end, Timeout).
 
 async_call(Pool, Fun) ->
-    spawn(fun() -> call(Pool, Fun) end).
+    async_call(Pool, Fun, infinity).
+async_call(Pool, Fun, Timeout) ->
+    spawn(fun() -> call(Pool, Fun, Timeout) end).
 
 %%--------------------------------------------------------------------
 %% @doc

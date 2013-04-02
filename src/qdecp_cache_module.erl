@@ -1,6 +1,6 @@
 -module(qdecp_cache_module).
 
--callback init([{atom(), term()}]) ->
+-callback init_cache([{atom(), term()}]) ->
     ok | {error, any()}.
 
 -callback set(iolist(), iolist()) ->

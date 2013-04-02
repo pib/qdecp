@@ -15,7 +15,7 @@
 %%% API
 %%%===================================================================
 init() ->
-    apply_all(init, [config()]).
+    apply_all(init_cache, [config()]).
 
 set(Req, Response={Code, _, _}) ->
     {Method, _} = cowboy_req:method(Req),

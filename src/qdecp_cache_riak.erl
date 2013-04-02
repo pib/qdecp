@@ -10,12 +10,12 @@
 -behavior(qdecp_cache_module).
 
 %% API
--export([init/1, get/1, set/2]).
+-export([init_cache/1, get/1, set/2]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-init(CacheConfig) ->
+init_cache(CacheConfig) ->
     supervisor:start_child(
       qdecp_sup, {qdecp_cache_riak_sup,
                   {qdecp_cache_riak_sup, start_link, [CacheConfig]},

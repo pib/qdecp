@@ -109,29 +109,29 @@ init(CacheConfig) ->
 set(Key, Value) ->
     Now = {Today, _} = calendar:universal_time(),
     Write = fun() ->
-                    case mnesia:read(?TABLE, Key) of
+                    case catch mnesia:read(?TABLE, Key) of
                         [#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
                             ok; % This key is already up-to-date, don't re-write it
                         _ ->
-                            mnesia:write(#qdecp_cache{key=Key, value=Value, created_at=Now})
+                            catch mnesia:write(#qdecp_cache{key=Key, value=Value, created_at=Now})
                     end
             end,
-    qdecp_generic_worker:async_call(
+    catch qdecp_generic_worker:async_call(
       ?WRITEPOOL,
-      fun() -> mnesia:activity(sync_dirty, Write, [], mnesia_frag) end),
+      fun() -> catch mnesia:activity(sync_dirty, Write, [], mnesia_frag) end),
     ok.
 
 get(Key) ->
     {Today, _} = calendar:universal_time(),
-    Read = fun() -> mnesia:read(?TABLE, Key) end,
-    case mnesia:activity(sync_dirty, Read, [], mnesia_frag) of
+    Read = fun() -> catch mnesia:read(?TABLE, Key) end,
+    case catch mnesia:activity(sync_dirty, Read, [], mnesia_frag) of
         [Cached=#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
             lager:debug("Found match ~p, ~p", [Key, Today]),
             {ok, Cached#qdecp_cache.value};
         [Cached=#qdecp_cache{created_at={Date, _Time}}] ->
             lager:debug("Found old ~p, ~p =/= ~p", [Key, Date, Today]),
-            Delete = fun() -> mnesia:delete_object(Cached) end,
-            mnesia:activity(async_dirty, Delete, [], mnesia_frag),
+            Delete = fun() -> catch mnesia:delete_object(Cached) end,
+            catch mnesia:activity(async_dirty, Delete, [], mnesia_frag),
             none;
         _ ->
             none

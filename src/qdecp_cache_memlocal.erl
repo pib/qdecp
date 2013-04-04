@@ -28,7 +28,7 @@ init_cache(CacheConfig) ->
                                        {cadfaerl, start_link, [?CACHE, Size]},
                                        permanent, 5000, worker, [cadfaerl]}),
     supervisor:start_child(qdecp_sup, {?Q,
-                                       {qdecp_gfq, start_link, [?Q, Size]},
+                                       {qdecp_gfq, start_link, [?Q, ?MODULE]},
                                        permanent, 5000, worker, [qdecp_gfq]}),
     ok.
 

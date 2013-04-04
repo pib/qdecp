@@ -37,7 +37,8 @@ request(Ip, Method, Url, Headers, Body, Retries) ->
                 0 ->
                     {error, 500};
                 _ ->
-                    lager:error("Error in lhttpc request ~p: ~p, retrying", [Url, Else]),
+                    lager:error("Error in lhttpc request ~p: ~p, retries left: ~p",
+                                [Url, Else, Retries]),
                     qdecp_stats:log_event({request_retry}),
                     request(Ip, Method, Url, Headers, Body, Retries - 1)
             end

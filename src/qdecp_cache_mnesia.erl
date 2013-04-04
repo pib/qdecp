@@ -17,8 +17,11 @@
 -define(SERVER, ?MODULE).
 
 -define(TABLE, qdecp_cache).
--define(READPOOL, qdecp_mnesia_read_workers).
+-define(SLEEPER, qdecp_mnesia_sleeper).
 -define(WRITEPOOL, qdecp_mnesia_write_workers).
+
+-define(GET_TIMEOUT, 200).
+
 -record(state, {}).
 -record(qdecp_cache, {key, value, created_at}).
 
@@ -114,7 +117,7 @@ init_cache(CacheConfig) ->
 
     ok.
 
-set(Key, Value) ->
+do_set(Key, Value) ->
     Now = {Today, _} = calendar:universal_time(),
     Write = fun() ->
                     case catch mnesia:read(?TABLE, Key) of
@@ -129,40 +132,87 @@ set(Key, Value) ->
       fun() -> catch mnesia:activity(sync_dirty, Write, [], mnesia_frag) end),
     ok.
 
-get(Key) ->
+do_get(Key, ReplyTo) ->
     {Today, _} = calendar:universal_time(),
     Read = fun() -> catch mnesia:read(?TABLE, Key) end,
-    case catch mnesia:activity(sync_dirty, Read, [], mnesia_frag) of
-        [Cached=#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
-            lager:debug("Found match ~p, ~p", [Key, Today]),
-            {ok, Cached#qdecp_cache.value};
-        [Cached=#qdecp_cache{created_at={Date, _Time}}] ->
-            lager:debug("Found old ~p, ~p =/= ~p", [Key, Date, Today]),
-            Delete = fun() -> catch mnesia:delete_object(Cached) end,
-            catch mnesia:activity(async_dirty, Delete, [], mnesia_frag),
-            none;
-        _ ->
-            none
-    end.
+    Res = case catch mnesia:activity(sync_dirty, Read, [], mnesia_frag) of
+              [Cached=#qdecp_cache{created_at={Day, _Time}}] when Day =:= Today ->
+                  lager:debug("Found match ~p, ~p", [Key, Today]),
+                  {ok, Cached#qdecp_cache.value};
+              [Cached=#qdecp_cache{created_at={Date, _Time}}] ->
+                  lager:debug("Found old ~p, ~p =/= ~p", [Key, Date, Today]),
+                  Delete = fun() -> catch mnesia:delete_object(Cached) end,
+                  catch mnesia:activity(async_dirty, Delete, [], mnesia_frag),
+                  none;
+              _ ->
+                  none
+          end,
+    ReplyTo ! Res.
 
 %% Gen-server stuff
+set(Key, Value) ->
+    case qdecp_sleeper:is_sleeping(?SLEEPER) of
+        true ->
+            lager:warning("Sleeping, skipping setting key ~p", [Key]),
+            ok;
+        false ->
+            gen_server:cast(?SERVER, {set, Key, Value}),
+            ok
+    end.
+
+get(Key) ->
+    case qdecp_sleeper:is_sleeping(?SLEEPER) of
+        true -> 
+            lager:warning("Sleeping, skipping getting key ~p", [Key]),
+            none;
+        false ->
+            case catch gen_server:call(?SERVER, {get, Key, ?GET_TIMEOUT}) of
+                {ok, Val} ->
+                    {ok, Val};
+                _ ->
+                    none
+            end
+    end.
 
 start_link() ->
     gen_server:start_link(?SERVER, ?MODULE, [], []).
 
 init(_Args) ->
+    qdecp_sleeper:start_link(?SLEEPER),
+    mnesia:subscribe(system),
     {ok, #state{}}.
 
+handle_call({get, Key, Timeout}, From, State) ->
+    %% Handle our own timeout to avoid spurious replies
+    spawn(fun() ->
+                  do_get(Key, self()),
+                  Response = receive
+                                 Res -> Res
+                             after
+                                 Timeout -> none
+                             end,
+                  gen_server:reply(From, Response)
+          end),
+                  
+    {noreply, State};
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.
 
+handle_cast({set, Key, Value}, State) ->
+    do_set(Key, Value),
+    {noreply, State};
 handle_cast(_Req, State) ->
     {noreply, State}.
 
+handle_info({mnesia_overload, Details}, State) ->
+    {ok, SleepTime} = qdecp_sleeper:add_sleep_time(?SLEEPER, 5000),
+    lager:warning("Mnesia overloaded, added sleep time (total now ~p): ~p", [SleepTime, Details]),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
+    mnesia:unsubscribe(system),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->

@@ -11,7 +11,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, add_sleep_time/1, is_sleeping/0]).
+-export([start_link/0, start_link/1, add_sleep_time/1, add_sleep_time/2,
+         is_sleeping/0, is_sleeping/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -28,16 +29,28 @@
 %% Add sleep time in ms
 -spec add_sleep_time(Time :: integer()) -> ok.
 add_sleep_time(Time) ->
-    gen_server:call(?SERVER, {add_sleep_time, Time}).
+    add_sleep_time(?SERVER, Time).
+
+-spec add_sleep_time(Name :: atom(), Time :: integer()) -> ok.
+add_sleep_time(Name, Time) ->
+    gen_server:call(Name, {add_sleep_time, Time}).
 
 %% Check if currently sleeping
 -spec is_sleeping() -> 'true' | 'false'.
 is_sleeping() ->
-    gen_server:call(?SERVER, {is_sleeping}).
+    is_sleeping(?SERVER).
+
+-spec is_sleeping(Name :: atom()) -> 'true' | 'false'.
+is_sleeping(Name) ->
+    gen_server:call(Name, {is_sleeping}).
 
 -spec start_link() -> {ok, pid()} | ignore | {error, atom()}.
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    start_link(?SERVER).
+
+-spec start_link(Name :: atom()) -> {ok, pid()} | ignore | {error, atom()}.
+start_link(Name) ->
+    gen_server:start_link({local, Name}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -47,19 +60,20 @@ start_link() ->
 init([]) ->
     {ok, #state{sleep_timer=none}}.
 
--spec handle_call({add_sleep_time, integer}, any(), #state{}) -> {reply, ok, #state{}};
+-spec handle_call({add_sleep_time, integer()}, any(), #state{}) -> {reply, {ok, integer()}, #state{}};
                  ({is_sleeping}, any(), #state{}) -> {reply, 'true' | 'false', #state{}}.
 handle_call({add_sleep_time, Time}, _From, State=#state{sleep_timer=none}) ->
     Timer = erlang:start_timer(Time, ?SERVER, ok),
-    {reply, ok, State#state{sleep_timer=Timer}};
+    {reply, {ok, Time}, State#state{sleep_timer=Timer}};
 handle_call({add_sleep_time, Time}, _From, State=#state{sleep_timer=Timer}) ->
-    Timer2 = case erlang:cancel_timer(Timer) of
-                 false -> %% Timer already done, start a new one
-                     erlang:start_timer(Time, ?SERVER, ok);
-                 TimeLeft ->
-                     erlang:start_timer(Time + TimeLeft, ?SERVER, ok)
-             end,
-    {reply, ok, State#state{sleep_timer=Timer2}};
+    Time2 = case erlang:cancel_timer(Timer) of
+                false -> %% Timer already done, start a new one
+                    Time;
+                TimeLeft ->
+                    Time + TimeLeft
+            end,
+    Timer2 = erlang:start_timer(Time2, ?SERVER, ok),
+    {reply, {ok, Time2}, State#state{sleep_timer=Timer2}};
 
 handle_call({is_sleeping}, _From, State=#state{sleep_timer=none}) ->
     {reply, false, State};

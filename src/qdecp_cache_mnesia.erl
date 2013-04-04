@@ -10,7 +10,7 @@
 -behavior(qdecp_cache_module).
 
 %% API
--export([start_link/0, create_db/0, manage_db/1, init_cache/1, get/1, set/2]).
+-export([start_link/1, create_db/0, manage_db/1, init_cache/1, get/1, set/2]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -107,14 +107,8 @@ manage_db(Config, [flush | Rest]) ->
 
 init_cache(CacheConfig) ->
     MnesiaConfig = proplists:get_value(mnesia, CacheConfig, []),
-    mnesia:start(),
-    WritePoolArgs = [{name, {local, ?WRITEPOOL}},
-                {size, proplists:get_value(read_pool_size, MnesiaConfig, 1)},
-                {worker_module, qdecp_generic_worker}],
-    supervisor:start_child(qdecp_sup, poolboy:child_spec(?WRITEPOOL, WritePoolArgs, [])),
-    supervisor:start_child(qdecp_sup, {?SERVER, {?MODULE, start_link, []},
+    supervisor:start_child(qdecp_sup, {?SERVER, {?MODULE, start_link, [MnesiaConfig]},
                                        permanent, 5000, worker, [?MODULE]}),
-
     ok.
 
 do_set(Key, Value) ->
@@ -153,7 +147,8 @@ do_get(Key, ReplyTo) ->
 set(Key, Value) ->
     case qdecp_sleeper:is_sleeping(?SLEEPER) of
         true ->
-            lager:warning("Sleeping, skipping setting key ~p", [Key]),
+            qdecp_stats:log_event({sleep_skip, set}),
+            lager:debug("Sleeping, skipping setting key ~p", [Key]),
             ok;
         false ->
             gen_server:cast(?SERVER, {set, Key, Value}),
@@ -163,7 +158,8 @@ set(Key, Value) ->
 get(Key) ->
     case qdecp_sleeper:is_sleeping(?SLEEPER) of
         true -> 
-            lager:warning("Sleeping, skipping getting key ~p", [Key]),
+            qdecp_stats:log_event({sleep_skip, get}),
+            lager:debug("Sleeping, skipping getting key ~p", [Key]),
             none;
         false ->
             case catch gen_server:call(?SERVER, {get, Key, ?GET_TIMEOUT}) of
@@ -174,10 +170,16 @@ get(Key) ->
             end
     end.
 
-start_link() ->
-    gen_server:start_link(?SERVER, ?MODULE, [], []).
+start_link(MnesiaConfig) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [MnesiaConfig], []).
 
-init(_Args) ->
+init([MnesiaConfig]) ->
+    mnesia:start(),
+    WritePoolArgs = [{name, {local, ?WRITEPOOL}},
+                {size, proplists:get_value(read_pool_size, MnesiaConfig, 1)},
+                {worker_module, qdecp_generic_worker}],
+    poolboy:start_link(WritePoolArgs, []),
+
     qdecp_sleeper:start_link(?SLEEPER),
     mnesia:subscribe(system),
     {ok, #state{}}.
@@ -204,11 +206,13 @@ handle_cast({set, Key, Value}, State) ->
 handle_cast(_Req, State) ->
     {noreply, State}.
 
-handle_info({mnesia_overload, Details}, State) ->
+handle_info({mnesia_system_event, {mnesia_overload, Details}}, State) ->
+    qdecp_stats:log_event(list_to_tuple([mnesia_overload | tuple_to_list(Details)])),
     {ok, SleepTime} = qdecp_sleeper:add_sleep_time(?SLEEPER, 5000),
     lager:warning("Mnesia overloaded, added sleep time (total now ~p): ~p", [SleepTime, Details]),
     {noreply, State};
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    lager:warning("Got unexpected info: ~p, ~p", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->

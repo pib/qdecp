@@ -20,7 +20,7 @@
 
 -define(SERVER, ?MODULE). 
 
--record(state, {sleep_timer=none}).
+-record(state, {name, sleep_timer=none}).
 
 %%%===================================================================
 %%% API
@@ -50,29 +50,29 @@ start_link() ->
 
 -spec start_link(Name :: atom()) -> {ok, pid()} | ignore | {error, atom()}.
 start_link(Name) ->
-    gen_server:start_link({local, Name}, ?MODULE, [], []).
+    gen_server:start_link({local, Name}, ?MODULE, [Name], []).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
--spec init([]) -> {ok, #state{}}.
-init([]) ->
-    {ok, #state{sleep_timer=none}}.
+-spec init([Name :: atom()]) -> {ok, #state{}}.
+init([Name]) ->
+    {ok, #state{name=Name, sleep_timer=none}}.
 
 -spec handle_call({add_sleep_time, integer()}, any(), #state{}) -> {reply, {ok, integer()}, #state{}};
                  ({is_sleeping}, any(), #state{}) -> {reply, 'true' | 'false', #state{}}.
-handle_call({add_sleep_time, Time}, _From, State=#state{sleep_timer=none}) ->
-    Timer = erlang:start_timer(Time, ?SERVER, ok),
+handle_call({add_sleep_time, Time}, _From, State=#state{name=Name, sleep_timer=none}) ->
+    Timer = erlang:start_timer(Time, Name, ok),
     {reply, {ok, Time}, State#state{sleep_timer=Timer}};
-handle_call({add_sleep_time, Time}, _From, State=#state{sleep_timer=Timer}) ->
+handle_call({add_sleep_time, Time}, _From, State=#state{name=Name, sleep_timer=Timer}) ->
     Time2 = case erlang:cancel_timer(Timer) of
                 false -> %% Timer already done, start a new one
                     Time;
                 TimeLeft ->
                     Time + TimeLeft
             end,
-    Timer2 = erlang:start_timer(Time2, ?SERVER, ok),
+    Timer2 = erlang:start_timer(Time2, Name, ok),
     {reply, {ok, Time2}, State#state{sleep_timer=Timer2}};
 
 handle_call({is_sleeping}, _From, State=#state{sleep_timer=none}) ->
@@ -87,7 +87,8 @@ handle_cast(_Msg, State) ->
 -spec handle_info({timeout, integer(), ok} | any(), #state{}) -> {noreply, #state{}}.
 handle_info({timeout, T1, ok}, State=#state{sleep_timer=T2}) when T1 =:= T2 ->
     {noreply, State#state{sleep_timer=none}};
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    lager:warning("Unexpected handle_info: ~p, ~p", [Info, State]),
     {noreply, State}.
 
 -spec terminate(any(), any()) -> ok.

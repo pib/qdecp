@@ -2,7 +2,7 @@
 
 -behavior(qdecp_client).
 
--export([init/0, request/6]).
+-export([init/0, request/8]).
 
 
 init() ->
@@ -14,10 +14,11 @@ init() ->
 
 
 -spec request(inet:ip_address(), qdecp_client:method(), qdecp_client:url(),
-              qdecp_client:headers(), qdecp_client:body(), qdecp_client:retries())
+              qdecp_client:headers(), qdecp_client:body(), qdecp_client:retries(),
+              timeout(), qdecp_client:retry_wait())
              -> {ok, qdecp_client:code(), qdecp_client:headers(), qdecp_client:body()}
                     | {error, qdecp_client:code()}.
-request(Ip, Method, Url, Headers, Body, Retries) ->
+request(Ip, Method, Url, Headers, Body, Retries, Timeout, RetryWait) ->
     Pool = pool_name([Ip], []),
     Opts = [{pool, Pool}, {pool_ensure, true},
             {connect_options, [{ip, Ip}]}
@@ -29,7 +30,7 @@ request(Ip, Method, Url, Headers, Body, Retries) ->
             lager:info("Started pool ~p with result ~p", [Pool, Res]);
         _ -> ok
     end,
-    case lhttpc:request(binary_to_list(Url), Method, Headers, Body, 5000, Opts) of
+    case lhttpc:request(binary_to_list(Url), Method, Headers, Body, Timeout, Opts) of
         {ok, {{Code, _Reason}, ResponseHeaders, ResponseBody}} ->
             {ok, Code, ResponseHeaders, ResponseBody};
         Else ->
@@ -37,10 +38,19 @@ request(Ip, Method, Url, Headers, Body, Retries) ->
                 0 ->
                     {error, 500};
                 _ ->
-                    lager:error("Error in lhttpc request ~p: ~p, retries left: ~p",
-                                [Url, Else, Retries]),
+                    case RetryWait > 0 of
+                        true ->
+                            lager:error(
+                              "Error in lhttpc request ~p: ~p, retries left: ~p, sleeping ~pms",
+                              [Url, Else, Retries, RetryWait]),
+                            timer:sleep(RetryWait);
+                        false ->
+                            lager:error("Error in lhttpc request ~p: ~p, retries left: ~p",
+                                        [Url, Else, Retries])
+                    end,
+
                     qdecp_stats:log_event({request_retry}),
-                    request(Ip, Method, Url, Headers, Body, Retries - 1)
+                    request(Ip, Method, Url, Headers, Body, Retries - 1, Timeout, RetryWait)
             end
     end.
 

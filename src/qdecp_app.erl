@@ -15,10 +15,11 @@ start(_StartType, _StartArgs) ->
                 undefined -> 8888
             end,
 
-    HttpClient  = case application:get_env(qdecp, http_client) of
-                      {ok, C} -> C;
-                      undefined -> qdecp_client_lhttpc
-                  end,
+    HttpConfig = case application:get_env(qdecp, http) of
+                     {ok, C} -> C;
+                     undefined -> []
+                 end,
+    HttpClient = proplists:get_value(client, HttpConfig, qdecp_client_lhttpc),
 
     {ok, Pid} = qdecp_sup:start_link(),
     qdecp_cache:init(),
@@ -28,7 +29,7 @@ start(_StartType, _StartArgs) ->
                 %% {Host, list({Path, Handler, Opts})}
                 {"127.0.0.1", [{"/stats", qdecp_stats_handler, []}]},
                 {"localhost", [{"/stats", qdecp_stats_handler, []}]},
-                {'_', [{'_', qdecp_cowboy_handler, [HttpClient]}]}
+                {'_', [{'_', qdecp_cowboy_handler, [HttpConfig]}]}
                ]),
 
     %% Name, NbAcceptors, TransOpts, ProtoOpts

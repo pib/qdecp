@@ -2,10 +2,15 @@
 -behavior(cowboy_http_handler).
 -export([init/3, handle/2, terminate/3]).
 
--record(state, {http_client}).
+-record(state, {http_client, timeout_ms, retries, retry_wait}).
 
-init({tcp, http}, Req, [HttpClient]) ->
-    {ok, Req, #state{http_client=HttpClient}}.
+init({tcp, http}, Req, [HttpConfig]) ->
+    HttpClient = proplists:get_value(client, HttpConfig, qdecp_client_lhttpc),
+    Retries = proplists:get_value(retries, HttpConfig, 10),
+    RetryWait = proplists:get_value(retry_wait, HttpConfig, 500),
+    Timeout = proplists:get_value(timeout, HttpConfig, 5000),
+    {ok, Req, #state{http_client=HttpClient, timeout_ms=Timeout,
+                     retries=Retries, retry_wait=RetryWait}}.
 
 handle(Req, State) ->
     {Method, _} = cowboy_req:method(Req),
@@ -47,10 +52,10 @@ do_request(Req, State=#state{http_client=HttpClient}) ->
                 
     Reply = case ReqMethod of
                 <<"GET">> ->
-                    HttpClient:request(Ip, get, Url, ReqHeaders, [], 10);
+                    HttpClient:request(Ip, get, Url, ReqHeaders, [], 10, 5000, 500);
                 <<"POST">> ->
                     {ok, ReqBody, _} = cowboy_req:body(Req),
-                    HttpClient:request(Ip, post, Url, ReqHeaders, ReqBody, 10);
+                    HttpClient:request(Ip, post, Url, ReqHeaders, ReqBody, 10, 5000, 500);
                 <<"CONNECT">> ->
                     {upgrade, protocol, qdecp_connect_proxy};
                 _ ->

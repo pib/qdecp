@@ -49,13 +49,17 @@ do_request(Req, State=#state{http_client=HttpClient}) ->
         true-> throw({error, "Stopping recursive request", "Peer IP is our IP!"});
         _ -> ok
     end,
-                
+
+    Retries = State#state.retries,
+    RetryWait = State#state.retry_wait,
+    Timeout = State#state.timeout_ms,
+
     Reply = case ReqMethod of
                 <<"GET">> ->
-                    HttpClient:request(Ip, get, Url, ReqHeaders, [], 10, 5000, 500);
+                    HttpClient:request(Ip, get, Url, ReqHeaders, [], Retries, Timeout, RetryWait);
                 <<"POST">> ->
                     {ok, ReqBody, _} = cowboy_req:body(Req),
-                    HttpClient:request(Ip, post, Url, ReqHeaders, ReqBody, 10, 5000, 500);
+                    HttpClient:request(Ip, post, Url, ReqHeaders, ReqBody, Retries, Timeout, RetryWait);
                 <<"CONNECT">> ->
                     {upgrade, protocol, qdecp_connect_proxy};
                 _ ->

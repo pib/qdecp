@@ -36,6 +36,7 @@ request(Ip, Method, Url, Headers, Body, Retries, Timeout, RetryWait) ->
         Else ->
             case Retries of
                 0 ->
+                    lager:error("Error in lhttpc request ~p: ~p, no retries left", [Url, Else]),
                     {error, 500};
                 _ ->
                     case RetryWait > 0 of
